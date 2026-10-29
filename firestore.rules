@@ -1,0 +1,1187 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Global Safety Net — Zero-Trust Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Global Primitives
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // Tiered Executive Administrator Helpers (Co-Founder, CEO, Founder) + 15-Min Session Policy
+    function hasAdminDoc() {
+      return isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    function adminDoc() {
+      return get(/databases/$(database)/documents/admins/$(request.auth.uid)).data;
+    }
+
+    function isFounderEmail() {
+      return isSignedIn() &&
+             'email' in request.auth.token &&
+             request.auth.token.email == 'abhishekbuisness20@gmail.com' &&
+             request.auth.token.email_verified == true;
+    }
+
+    function isActiveAdminRole(targetRole) {
+      return hasAdminDoc() &&
+             adminDoc().adminRole == targetRole &&
+             (targetRole == 'founder' || (adminDoc().sessionExpiresAt is timestamp && adminDoc().sessionExpiresAt >= request.time));
+    }
+
+    function isFounder() {
+      return isFounderEmail() || isActiveAdminRole('founder');
+    }
+
+    function isCeo() {
+      return isActiveAdminRole('ceo');
+    }
+
+    function isCoFounder() {
+      return isActiveAdminRole('cofounder');
+    }
+
+    function isCeoOrFounder() {
+      return isFounder() || isCeo();
+    }
+
+    function isAnyAdmin() {
+      return isFounderEmail() || (
+        hasAdminDoc() && (
+          adminDoc().adminRole == 'founder' ||
+          (adminDoc().adminRole in ['ceo', 'cofounder'] &&
+           adminDoc().sessionExpiresAt is timestamp &&
+           adminDoc().sessionExpiresAt >= request.time)
+        )
+      );
+    }
+
+    // Legacy alias mapped to any active authorized administrator
+    function isAdmin() {
+      return isAnyAdmin();
+    }
+
+    // Validation Helpers
+    function isValidUserProfile(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 80 &&
+             data.headline is string && data.headline.size() <= 120 &&
+             data.bio is string && data.bio.size() <= 600 &&
+             data.role is string && data.role in ['customer', 'provider'] &&
+             data.city is string && data.city.size() >= 1 && data.city.size() <= 60 &&
+             data.locality is string && data.locality.size() <= 80 &&
+             data.preferredLanguage is string && data.preferredLanguage in ['en', 'hi'] &&
+             data.skills is list && data.skills.size() <= 10 &&
+             (data.skills.size() == 0 || (data.skills[0] is string && data.skills[0].size() <= 50)) &&
+             data.startingPrice is int && data.startingPrice >= 0 && data.startingPrice <= 10000000 &&
+             data.availability is string && data.availability.size() <= 100 &&
+             data.isVerified is bool &&
+             data.verificationStatus is string &&
+             data.verificationStatus in ['draft', 'not_submitted', 'pending_review', 'under_review', 'approved', 'rejected', 'additional_info_required', 'suspended'] &&
+             data.subscriptionPlan is string && data.subscriptionPlan in ['free', 'premium'] &&
+             data.isPublicProvider is bool &&
+             data.accountStatus is string && data.accountStatus in ['active', 'suspended'] &&
+             data.publicPhone is string && data.publicPhone.size() <= 20 &&
+             data.completedJobsCount is int && data.completedJobsCount >= 0 &&
+             data.ratingSum is int && data.ratingSum >= 0 &&
+             data.reviewCount is int && data.reviewCount >= 0 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function canUpdateUserProfile(userId) {
+      let changed = incoming().diff(existing()).affectedKeys();
+      return (request.auth.uid == userId &&
+              incoming().role == existing().role &&
+              incoming().isVerified == existing().isVerified &&
+              incoming().accountStatus == existing().accountStatus &&
+              changed.hasOnly([
+                'displayName', 'headline', 'bio', 'city', 'locality',
+                'preferredLanguage', 'skills', 'startingPrice', 'availability',
+                'verificationStatus', 'isPublicProvider',
+                'publicPhone', 'completedJobsCount', 'ratingSum', 'reviewCount', 'updatedAt',
+                'platformId', 'onboardingStep', 'onboardingCompleted', 'experienceLevel',
+                'experienceYears', 'languagesSpoken', 'qualifications', 'businessType',
+                'businessName', 'primaryCategory', 'subcategories', 'pricingModel',
+                'remoteAvailable', 'inPersonAvailable', 'serviceState', 'pinCode',
+                'serviceAreaRadius', 'avatarUri', 'coverUri', 'portfolioSummaryJson',
+                'publicListingConsent', 'verificationRejectionReason', 'emailVerified', 'phoneVerified'
+              ]) &&
+              isValidUserProfile(incoming())) ||
+             // Cross-user rating aggregation after completed booking review
+             (incoming().isVerified == existing().isVerified &&
+              incoming().accountStatus == existing().accountStatus &&
+              incoming().role == existing().role &&
+              incoming().ratingSum is int && incoming().ratingSum >= 0 &&
+              incoming().reviewCount is int && incoming().reviewCount >= 0 &&
+              incoming().updatedAt is timestamp &&
+              changed.hasOnly(['ratingSum', 'reviewCount', 'updatedAt'])) ||
+             // Co-Founder: Verification queue approval/rejection only (cannot alter role or suspend account)
+             (isCoFounder() &&
+              incoming().role == existing().role &&
+              incoming().accountStatus == existing().accountStatus &&
+              changed.hasOnly([
+                'isVerified', 'verificationStatus', 'isPublicProvider',
+                'verificationRejectionReason', 'updatedAt'
+              ])) ||
+             // CEO: Verification, operational suspension, and subscription management (cannot alter role)
+             (isCeo() &&
+              incoming().role == existing().role &&
+              changed.hasOnly([
+                'isVerified', 'verificationStatus', 'accountStatus', 'subscriptionPlan',
+                'isPublicProvider', 'verificationRejectionReason', 'completedJobsCount',
+                'ratingSum', 'reviewCount', 'updatedAt'
+              ])) ||
+             // Founder: Full user profile & role administration
+             (isFounder() &&
+              changed.hasOnly([
+                'role', 'isVerified', 'verificationStatus', 'accountStatus', 'subscriptionPlan',
+                'isPublicProvider', 'verificationRejectionReason', 'completedJobsCount',
+                'ratingSum', 'reviewCount', 'updatedAt'
+              ]));
+    }
+
+    function isValidService(data) {
+      return data.providerId is string && data.providerId.size() >= 1 && data.providerId.size() <= 128 &&
+             data.providerName is string && data.providerName.size() >= 1 && data.providerName.size() <= 80 &&
+             data.providerVerified is bool &&
+             data.title is string && data.title.size() >= 3 && data.title.size() <= 120 &&
+             data.category is string && data.category.size() >= 1 && data.category.size() <= 60 &&
+             data.subcategory is string && data.subcategory.size() <= 60 &&
+             data.shortSummary is string && data.shortSummary.size() >= 5 && data.shortSummary.size() <= 200 &&
+             data.description is string && data.description.size() >= 10 && data.description.size() <= 2000 &&
+             data.skills is list && data.skills.size() <= 10 &&
+             (data.skills.size() == 0 || (data.skills[0] is string && data.skills[0].size() <= 50)) &&
+             data.startingPrice is int && data.startingPrice >= 0 && data.startingPrice <= 10000000 &&
+             data.pricingModel is string && data.pricingModel in ['fixed', 'hourly', 'quote'] &&
+             data.deliverables is string && data.deliverables.size() <= 1000 &&
+             data.turnaround is string && data.turnaround.size() <= 100 &&
+             data.city is string && data.city.size() >= 1 && data.city.size() <= 60 &&
+             data.locality is string && data.locality.size() <= 80 &&
+             data.availability is string && data.availability.size() <= 100 &&
+             data.terms is string && data.terms.size() <= 500 &&
+             data.isPublished is bool &&
+             data.isDraft is bool &&
+             data.isFeatured is bool &&
+             data.moderationStatus is string && data.moderationStatus in ['approved', 'pending', 'rejected'] &&
+             data.moderationReason is string && data.moderationReason.size() <= 300 &&
+             data.ratingSum is int && data.ratingSum >= 0 &&
+             data.reviewCount is int && data.reviewCount >= 0 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidBookingRequest(data) {
+      return data.customerId is string && data.customerId.size() >= 1 && data.customerId.size() <= 128 &&
+             data.customerName is string && data.customerName.size() >= 1 && data.customerName.size() <= 80 &&
+             data.providerId is string && data.providerId.size() >= 1 && data.providerId.size() <= 128 &&
+             data.providerName is string && data.providerName.size() >= 1 && data.providerName.size() <= 80 &&
+             data.serviceId is string && data.serviceId.size() >= 1 && data.serviceId.size() <= 128 &&
+             data.serviceTitle is string && data.serviceTitle.size() >= 1 && data.serviceTitle.size() <= 120 &&
+             data.category is string && data.category.size() >= 1 && data.category.size() <= 60 &&
+             data.requirements is string && data.requirements.size() >= 5 && data.requirements.size() <= 1500 &&
+             data.preferredDate is string && data.preferredDate.size() >= 1 && data.preferredDate.size() <= 60 &&
+             data.attachmentNote is string && data.attachmentNote.size() <= 300 &&
+             data.quotedPrice is int && data.quotedPrice >= 0 && data.quotedPrice <= 10000000 &&
+             data.requestType is string && data.requestType in ['booking', 'quote'] &&
+             data.status is string &&
+             data.status in [
+               'draft', 'pending', 'accepted', 'declined', 'awaiting_payment', 'confirmed',
+               'in_progress', 'completed', 'cancelled', 'disputed', 'refund_pending', 'refunded'
+             ] &&
+             data.statusNote is string && data.statusNote.size() <= 500 &&
+             data.hasReviewed is bool &&
+             (!('bookingRef' in data) || (data.bookingRef is string && data.bookingRef.size() <= 40)) &&
+             (!('preferredTimeSlot' in data) || (data.preferredTimeSlot is string && data.preferredTimeSlot.size() <= 60)) &&
+             (!('paymentMethod' in data) || (data.paymentMethod is string && data.paymentMethod.size() <= 40)) &&
+             (!('paymentStatus' in data) || (data.paymentStatus is string && data.paymentStatus.size() <= 40)) &&
+             (!('paymentReferenceId' in data) || (data.paymentReferenceId is string && data.paymentReferenceId.size() <= 128)) &&
+             (!('platformFeeInr' in data) || (data.platformFeeInr is int && data.platformFeeInr >= 0)) &&
+             (!('totalAmountInr' in data) || (data.totalAmountInr is int && data.totalAmountInr >= 0)) &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function canUpdateBooking() {
+      let changed = incoming().diff(existing()).affectedKeys();
+      let effectiveAmount = ('totalAmountInr' in existing() && existing().totalAmountInr > 0)
+        ? existing().totalAmountInr
+        : existing().quotedPrice;
+      return (request.auth.uid == existing().customerId &&
+              existing().status != 'cancelled' &&
+              existing().status != 'declined' &&
+              existing().status != 'refunded' &&
+              incoming().status in [
+                'draft', 'pending', 'awaiting_payment', 'confirmed',
+                'cancelled', 'disputed', 'completed', 'refund_pending'
+              ] &&
+              changed.hasOnly([
+                'requirements', 'preferredDate', 'preferredTimeSlot', 'attachmentNote',
+                'status', 'statusNote', 'hasReviewed', 'paymentMethod', 'paymentStatus',
+                'paymentReferenceId', 'platformFeeInr', 'totalAmountInr', 'updatedAt'
+              ])) ||
+             (request.auth.uid == existing().providerId &&
+              existing().status in ['pending', 'accepted', 'awaiting_payment', 'confirmed', 'in_progress', 'disputed'] &&
+              incoming().status in ['accepted', 'declined', 'awaiting_payment', 'confirmed', 'in_progress', 'completed', 'disputed'] &&
+              changed.hasOnly([
+                'quotedPrice', 'status', 'statusNote', 'paymentStatus', 'totalAmountInr', 'updatedAt'
+              ])) ||
+             // Co-Founder can only flag a booking as disputed (no refund execution)
+             (isCoFounder() &&
+              incoming().status == 'disputed' &&
+              changed.hasOnly(['status', 'statusNote', 'updatedAt'])) ||
+             // CEO can approve refunds up to ₹10,000 INR or update non-refund dispute status
+             (isCeo() &&
+              (incoming().status != 'refunded' || effectiveAmount <= 10000) &&
+              changed.hasOnly([
+                'status', 'statusNote', 'paymentStatus', 'paymentReferenceId', 'updatedAt'
+              ])) ||
+             // Founder has unlimited refund approval authority
+             (isFounder() &&
+              changed.hasOnly([
+                'status', 'statusNote', 'paymentStatus', 'paymentReferenceId', 'updatedAt'
+              ]));
+    }
+
+    function isValidConversation(data) {
+      return data.customerId is string && data.customerId.size() >= 1 && data.customerId.size() <= 128 &&
+             data.customerName is string && data.customerName.size() >= 1 && data.customerName.size() <= 80 &&
+             data.providerId is string && data.providerId.size() >= 1 && data.providerId.size() <= 128 &&
+             data.providerName is string && data.providerName.size() >= 1 && data.providerName.size() <= 80 &&
+             data.bookingId is string && data.bookingId.size() <= 128 &&
+             data.serviceTitle is string && data.serviceTitle.size() <= 120 &&
+             data.lastMessage is string && data.lastMessage.size() <= 500 &&
+             data.unreadCustomerCount is int && data.unreadCustomerCount >= 0 &&
+             data.unreadProviderCount is int && data.unreadProviderCount >= 0 &&
+             data.isBlocked is bool &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidChatMessage(data) {
+      return data.conversationId is string && data.conversationId.size() >= 1 && data.conversationId.size() <= 128 &&
+             data.customerId is string && data.customerId.size() >= 1 && data.customerId.size() <= 128 &&
+             data.providerId is string && data.providerId.size() >= 1 && data.providerId.size() <= 128 &&
+             data.senderId is string && data.senderId.size() >= 1 && data.senderId.size() <= 128 &&
+             data.senderName is string && data.senderName.size() >= 1 && data.senderName.size() <= 80 &&
+             data.text is string && data.text.size() >= 1 && data.text.size() <= 1000 &&
+             data.isRead is bool &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    function isValidNotification(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.senderId is string && data.senderId.size() >= 1 && data.senderId.size() <= 128 &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 120 &&
+             data.body is string && data.body.size() >= 1 && data.body.size() <= 500 &&
+             data.type is string &&
+             data.type in [
+               'new_enquiry', 'booking_accepted', 'booking_declined', 'status_changed',
+               'new_message', 'review_reminder', 'verification_update', 'registration_complete',
+               'profile_saved', 'payment_update', 'refund_update', 'support_update', 'dispute_update'
+             ] &&
+             data.relatedId is string && data.relatedId.size() <= 128 &&
+             data.isRead is bool &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidReview(data) {
+      return data.bookingId is string && data.bookingId.size() >= 1 && data.bookingId.size() <= 128 &&
+             data.serviceId is string && data.serviceId.size() >= 1 && data.serviceId.size() <= 128 &&
+             data.providerId is string && data.providerId.size() >= 1 && data.providerId.size() <= 128 &&
+             data.customerId is string && data.customerId.size() >= 1 && data.customerId.size() <= 128 &&
+             data.customerName is string && data.customerName.size() >= 1 && data.customerName.size() <= 80 &&
+             data.rating is int && data.rating >= 1 && data.rating <= 5 &&
+             data.comment is string && data.comment.size() >= 3 && data.comment.size() <= 1000 &&
+             data.isReported is bool &&
+             data.moderationStatus is string && data.moderationStatus in ['published', 'flagged', 'removed'] &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidFavourite(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.targetId is string && data.targetId.size() >= 1 && data.targetId.size() <= 128 &&
+             data.targetType is string && data.targetType in ['service', 'provider', 'job', 'course'] &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 120 &&
+             data.subtitle is string && data.subtitle.size() <= 120 &&
+             data.location is string && data.location.size() <= 100 &&
+             data.price is int && data.price >= 0 && data.price <= 10000000 &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    function isValidVerificationSubmission(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.legalName is string && data.legalName.size() >= 2 && data.legalName.size() <= 100 &&
+             data.businessName is string && data.businessName.size() <= 120 &&
+             data.category is string && data.category.size() >= 1 && data.category.size() <= 60 &&
+             data.city is string && data.city.size() >= 1 && data.city.size() <= 60 &&
+             data.experienceYears is int && data.experienceYears >= 0 && data.experienceYears <= 80 &&
+             data.portfolioSummary is string && data.portfolioSummary.size() >= 5 && data.portfolioSummary.size() <= 1000 &&
+             data.documentReferenceNote is string && data.documentReferenceNote.size() <= 300 &&
+             data.status is string && data.status in ['pending_review', 'under_review', 'approved', 'rejected', 'additional_info_required', 'suspended'] &&
+             data.adminNote is string && data.adminNote.size() <= 500 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidSafetyReport(data) {
+      return data.reporterId is string && data.reporterId.size() >= 1 && data.reporterId.size() <= 128 &&
+             data.targetId is string && data.targetId.size() >= 1 && data.targetId.size() <= 128 &&
+             data.targetType is string && data.targetType in ['service', 'provider', 'review', 'user', 'chat'] &&
+             data.reason is string && data.reason.size() >= 3 && data.reason.size() <= 120 &&
+             data.details is string && data.details.size() <= 1000 &&
+             data.status is string && data.status in ['open', 'investigating', 'escalated', 'resolved', 'dismissed'] &&
+             data.adminResolution is string && data.adminResolution.size() <= 500 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidSupportTicket(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.name is string && data.name.size() >= 1 && data.name.size() <= 80 &&
+             data.contactEmail is string && data.contactEmail.size() >= 3 && data.contactEmail.size() <= 120 &&
+             data.category is string && data.category.size() >= 1 && data.category.size() <= 60 &&
+             data.relatedBookingId is string && data.relatedBookingId.size() <= 128 &&
+             data.description is string && data.description.size() >= 5 && data.description.size() <= 1500 &&
+             data.status is string && data.status in ['open', 'in_progress', 'escalated', 'resolved'] &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidPlatformSetting(data) {
+      return data.settingKey is string && data.settingKey.size() >= 1 && data.settingKey.size() <= 60 &&
+             data.announcementText is string && data.announcementText.size() <= 300 &&
+             data.announcementActive is bool &&
+             data.freeListingLimit is int && data.freeListingLimit >= 1 && data.freeListingLimit <= 100 &&
+             data.premiumPriceInr is int && data.premiumPriceInr >= 0 && data.premiumPriceInr <= 1000000 &&
+             data.billingPeriod is string && data.billingPeriod.size() >= 1 && data.billingPeriod.size() <= 40 &&
+             data.paymentsDemoMode is bool &&
+             (!('maintenanceMode' in data) || data.maintenanceMode is bool) &&
+             (!('sessionTimeoutMinutes' in data) || (data.sessionTimeoutMinutes is int && data.sessionTimeoutMinutes >= 5 && data.sessionTimeoutMinutes <= 120)) &&
+             data.updatedBy is string && data.updatedBy.size() >= 1 && data.updatedBy.size() <= 128 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    // Updated Payment Record validator supporting Pending, Processing, Successful (succeeded), Failed, Refunded, Disputed
+    function isValidPaymentRecord(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.providerId is string && data.providerId.size() <= 128 &&
+             data.bookingId is string && data.bookingId.size() <= 128 &&
+             data.paymentType is string && data.paymentType in ['booking_payment', 'subscription', 'payout', 'refund'] &&
+             data.method is string && data.method in ['upi', 'card', 'netbanking', 'bank_transfer', 'cash_offline'] &&
+             data.amountInr is int && data.amountInr >= 0 && data.amountInr <= 10000000 &&
+             data.status is string && data.status in ['pending', 'processing', 'succeeded', 'failed', 'refund_pending', 'refunded', 'disputed', 'paid_out'] &&
+             data.transactionRef is string && data.transactionRef.size() <= 120 &&
+             data.notes is string && data.notes.size() <= 500 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidAdminAccount(data, adminUid) {
+      return data.adminUid is string && data.adminUid == adminUid &&
+             data.canonicalAccountId is string && data.canonicalAccountId in ['ADM-COF-001', 'ADM-CEO-001', 'ADM-FND-001'] &&
+             data.adminRole is string && data.adminRole in ['cofounder', 'ceo', 'founder'] &&
+             data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 60 &&
+             data.username is string && data.username.size() >= 2 && data.username.size() <= 60 &&
+             // Never allow plaintext passwords: passwordVerifierHash MUST be a 64-character hex SHA-256 hash
+             data.passwordVerifierHash is string && data.passwordVerifierHash.size() == 64 &&
+             data.passwordVerifierHash.matches('^[a-fA-F0-9]{64}$') &&
+             data.passwordSalt is string && data.passwordSalt.size() >= 8 && data.passwordSalt.size() <= 64 &&
+             data.mustChangePassword is bool &&
+             data.failedAttempts is int && data.failedAttempts >= 0 && data.failedAttempts <= 100 &&
+             data.lockedUntilEpochMs is int && data.lockedUntilEpochMs >= 0 &&
+             data.founderSessionPersistent is bool &&
+             data.sessionExpiresAt is timestamp &&
+             // Strict Role-to-Canonical-Account-to-Username Mapping
+             ((data.adminRole == 'cofounder' &&
+               data.canonicalAccountId == 'ADM-COF-001' &&
+               data.displayName == 'Abhay' &&
+               data.username in ['Abhay', 'abhay'] &&
+               data.founderSessionPersistent == false) ||
+              (data.adminRole == 'ceo' &&
+               data.canonicalAccountId == 'ADM-CEO-001' &&
+               data.displayName == 'CEO' &&
+               data.username in ['Abhay', 'abhay', 'Adarsh', 'adarsh'] &&
+               data.founderSessionPersistent == false) ||
+              (data.adminRole == 'founder' &&
+               data.canonicalAccountId == 'ADM-FND-001' &&
+               data.displayName == 'Founder' &&
+               data.username in ['Abhisheksingh', 'abhisheksingh'] &&
+               data.founderSessionPersistent == true)) &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidPaymentDispute(data) {
+      return data.bookingId is string && data.bookingId.size() >= 1 && data.bookingId.size() <= 128 &&
+             data.paymentId is string && data.paymentId.size() <= 128 &&
+             data.customerId is string && data.customerId.size() >= 1 && data.customerId.size() <= 128 &&
+             data.customerName is string && data.customerName.size() <= 80 &&
+             data.providerId is string && data.providerId.size() >= 1 && data.providerId.size() <= 128 &&
+             data.providerName is string && data.providerName.size() <= 80 &&
+             data.disputedAmountInr is int && data.disputedAmountInr >= 0 && data.disputedAmountInr <= 10000000 &&
+             data.reason is string && data.reason.size() >= 3 && data.reason.size() <= 200 &&
+             data.customerStatement is string && data.customerStatement.size() <= 1500 &&
+             data.providerStatement is string && data.providerStatement.size() <= 1500 &&
+             data.evidenceNote is string && data.evidenceNote.size() <= 500 &&
+             data.status is string && data.status in ['open', 'under_review', 'escalated_to_ceo', 'escalated_to_founder', 'resolved_refunded', 'resolved_rejected'] &&
+             data.assignedRole is string && data.assignedRole in ['cofounder', 'ceo', 'founder'] &&
+             data.adminDecisionNote is string && data.adminDecisionNote.size() <= 600 &&
+             data.decidedByAdminId is string && data.decidedByAdminId.size() <= 128 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidAdminAuditLog(data) {
+      return data.adminId is string && data.adminId.size() >= 1 && data.adminId.size() <= 128 &&
+             data.adminEmail is string && data.adminEmail.size() >= 3 && data.adminEmail.size() <= 120 &&
+             data.actionType is string && data.actionType.size() >= 2 && data.actionType.size() <= 80 &&
+             data.targetCollection is string && data.targetCollection.size() >= 2 && data.targetCollection.size() <= 60 &&
+             data.targetId is string && data.targetId.size() >= 1 && data.targetId.size() <= 128 &&
+             data.reason is string && data.reason.size() <= 500 &&
+             data.previousState is string && data.previousState.size() <= 120 &&
+             data.newState is string && data.newState.size() <= 120 &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    // Collection 1: User Profiles
+    match /user_profiles/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && (
+        request.auth.uid == userId ||
+        resource == null ||
+        resource.data.isPublicProvider == true ||
+        isAnyAdmin()
+      );
+
+      allow list: if isSignedIn() && (
+        resource.data.userId == request.auth.uid ||
+        resource.data.isPublicProvider == true ||
+        isAnyAdmin()
+      );
+
+      allow create: if isSignedIn() &&
+                       isValidId(userId) &&
+                       request.auth.uid == userId &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().isVerified == false &&
+                       incoming().accountStatus == 'active' &&
+                       incoming().completedJobsCount == 0 &&
+                       incoming().ratingSum == 0 &&
+                       incoming().reviewCount == 0 &&
+                       incoming().subscriptionPlan == 'free' &&
+                       incoming().keys().hasAll([
+                         'userId', 'displayName', 'headline', 'bio', 'role', 'city', 'locality',
+                         'preferredLanguage', 'skills', 'startingPrice', 'availability', 'isVerified',
+                         'verificationStatus', 'subscriptionPlan', 'isPublicProvider', 'accountStatus',
+                         'publicPhone', 'completedJobsCount', 'ratingSum', 'reviewCount', 'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'displayName', 'headline', 'bio', 'role', 'city', 'locality',
+                         'preferredLanguage', 'skills', 'startingPrice', 'availability', 'isVerified',
+                         'verificationStatus', 'subscriptionPlan', 'isPublicProvider', 'accountStatus',
+                         'publicPhone', 'completedJobsCount', 'ratingSum', 'reviewCount', 'createdAt', 'updatedAt',
+                         'platformId', 'onboardingStep', 'onboardingCompleted', 'experienceLevel',
+                         'experienceYears', 'languagesSpoken', 'qualifications', 'businessType',
+                         'businessName', 'primaryCategory', 'subcategories', 'pricingModel',
+                         'remoteAvailable', 'inPersonAvailable', 'serviceState', 'pinCode',
+                         'serviceAreaRadius', 'avatarUri', 'coverUri', 'portfolioSummaryJson',
+                         'publicListingConsent', 'verificationRejectionReason', 'emailVerified', 'phoneVerified'
+                       ]) &&
+                       isValidUserProfile(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(userId) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       canUpdateUserProfile(userId);
+
+      allow delete: if isSignedIn() && isValidId(userId) && (request.auth.uid == userId || isFounder());
+    }
+
+    // Collection 2: Services
+    match /services/{serviceId} {
+      allow get: if isSignedIn() && isValidId(serviceId) && (
+        resource == null ||
+        resource.data.isPublished == true ||
+        resource.data.providerId == request.auth.uid ||
+        isAnyAdmin()
+      );
+
+      allow list: if isSignedIn() && (
+        resource.data.isPublished == true ||
+        resource.data.providerId == request.auth.uid ||
+        isAnyAdmin()
+      );
+
+      allow create: if isSignedIn() &&
+                       isValidId(serviceId) &&
+                       incoming().providerId == request.auth.uid &&
+                       incoming().ratingSum == 0 &&
+                       incoming().reviewCount == 0 &&
+                       incoming().keys().hasAll([
+                         'providerId', 'providerName', 'providerVerified', 'title', 'category',
+                         'subcategory', 'shortSummary', 'description', 'skills', 'startingPrice',
+                         'pricingModel', 'deliverables', 'turnaround', 'city', 'locality',
+                         'availability', 'terms', 'isPublished', 'isDraft', 'isFeatured',
+                         'moderationStatus', 'moderationReason', 'ratingSum', 'reviewCount',
+                         'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'providerId', 'providerName', 'providerVerified', 'title', 'category',
+                         'subcategory', 'shortSummary', 'description', 'skills', 'startingPrice',
+                         'pricingModel', 'deliverables', 'turnaround', 'city', 'locality',
+                         'availability', 'terms', 'isPublished', 'isDraft', 'isFeatured',
+                         'moderationStatus', 'moderationReason', 'ratingSum', 'reviewCount',
+                         'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidService(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(serviceId) &&
+                       incoming().providerId == existing().providerId &&
+                       incoming().createdAt == existing().createdAt && (
+                         (request.auth.uid == existing().providerId &&
+                          isValidService(incoming()) &&
+                          incoming().diff(existing()).affectedKeys().hasOnly([
+                            'providerName', 'providerVerified', 'title', 'category', 'subcategory',
+                            'shortSummary', 'description', 'skills', 'startingPrice', 'pricingModel',
+                            'deliverables', 'turnaround', 'city', 'locality', 'availability', 'terms',
+                            'isPublished', 'isDraft', 'isFeatured', 'ratingSum', 'reviewCount', 'updatedAt'
+                          ])) ||
+                         (incoming().ratingSum is int && incoming().ratingSum >= 0 &&
+                          incoming().reviewCount is int && incoming().reviewCount >= 0 &&
+                          incoming().updatedAt is timestamp &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['ratingSum', 'reviewCount', 'updatedAt'])) ||
+                         (isAnyAdmin() &&
+                          incoming().diff(existing()).affectedKeys().hasOnly([
+                            'isPublished', 'isFeatured', 'moderationStatus', 'moderationReason', 'updatedAt'
+                          ]))
+                       );
+
+      allow delete: if isSignedIn() && isValidId(serviceId) && (
+        resource.data.providerId == request.auth.uid || isCeoOrFounder()
+      );
+    }
+
+    // Collection 3: Booking Requests
+    match /booking_requests/{bookingId} {
+      allow get: if isSignedIn() && isValidId(bookingId) && (
+        resource == null ||
+        resource.data.customerId == request.auth.uid ||
+        resource.data.providerId == request.auth.uid ||
+        isAnyAdmin()
+      );
+
+      allow list: if isSignedIn() && (
+        resource.data.customerId == request.auth.uid ||
+        resource.data.providerId == request.auth.uid ||
+        isAnyAdmin()
+      );
+
+      allow create: if isSignedIn() &&
+                       isValidId(bookingId) &&
+                       incoming().customerId == request.auth.uid &&
+                       incoming().customerId != incoming().providerId &&
+                       incoming().status in ['draft', 'pending'] &&
+                       incoming().hasReviewed == false &&
+                       incoming().keys().hasAll([
+                         'customerId', 'customerName', 'providerId', 'providerName', 'serviceId',
+                         'serviceTitle', 'category', 'requirements', 'preferredDate', 'attachmentNote',
+                         'quotedPrice', 'requestType', 'status', 'statusNote', 'hasReviewed',
+                         'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'customerId', 'customerName', 'providerId', 'providerName', 'serviceId',
+                         'serviceTitle', 'category', 'requirements', 'preferredDate', 'attachmentNote',
+                         'quotedPrice', 'requestType', 'status', 'statusNote', 'hasReviewed',
+                         'bookingRef', 'preferredTimeSlot', 'paymentMethod', 'paymentStatus',
+                         'paymentReferenceId', 'platformFeeInr', 'totalAmountInr',
+                         'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidBookingRequest(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(bookingId) &&
+                       isValidBookingRequest(incoming()) &&
+                       incoming().customerId == existing().customerId &&
+                       incoming().providerId == existing().providerId &&
+                       incoming().serviceId == existing().serviceId &&
+                       incoming().createdAt == existing().createdAt &&
+                       canUpdateBooking();
+
+      allow delete: if isSignedIn() && isValidId(bookingId) && (
+        (resource.data.customerId == request.auth.uid && resource.data.status == 'draft') ||
+        isFounder()
+      );
+    }
+
+    // Collection 4: Conversations (Safe against non-existent document get())
+    match /conversations/{conversationId} {
+      allow get: if isSignedIn() && isValidId(conversationId) && (
+        resource == null ||
+        resource.data.customerId == request.auth.uid ||
+        resource.data.providerId == request.auth.uid ||
+        isAnyAdmin()
+      );
+
+      allow list: if isSignedIn() && (
+        resource.data.customerId == request.auth.uid ||
+        resource.data.providerId == request.auth.uid ||
+        isAnyAdmin()
+      );
+
+      allow create: if isSignedIn() &&
+                       isValidId(conversationId) &&
+                       (incoming().customerId == request.auth.uid || incoming().providerId == request.auth.uid) &&
+                       incoming().customerId != incoming().providerId &&
+                       incoming().keys().hasAll([
+                         'customerId', 'customerName', 'providerId', 'providerName', 'bookingId',
+                         'serviceTitle', 'lastMessage', 'unreadCustomerCount', 'unreadProviderCount',
+                         'isBlocked', 'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'customerId', 'customerName', 'providerId', 'providerName', 'bookingId',
+                         'serviceTitle', 'lastMessage', 'unreadCustomerCount', 'unreadProviderCount',
+                         'isBlocked', 'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidConversation(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(conversationId) &&
+                       isValidConversation(incoming()) &&
+                       incoming().customerId == existing().customerId &&
+                       incoming().providerId == existing().providerId &&
+                       incoming().createdAt == existing().createdAt &&
+                       (request.auth.uid == existing().customerId || request.auth.uid == existing().providerId || isAnyAdmin()) &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'lastMessage', 'unreadCustomerCount', 'unreadProviderCount', 'isBlocked', 'updatedAt'
+                       ]);
+
+      allow delete: if isFounder() && isValidId(conversationId);
+    }
+
+    // Collection 5: Messages (Strict Participant + Authorized Support Admin Isolation)
+    match /messages/{messageId} {
+      allow get: if isSignedIn() && isValidId(messageId) && (
+        resource == null ||
+        resource.data.customerId == request.auth.uid ||
+        resource.data.providerId == request.auth.uid ||
+        isAnyAdmin()
+      );
+
+      allow list: if isSignedIn() && (
+        resource.data.customerId == request.auth.uid ||
+        resource.data.providerId == request.auth.uid ||
+        isAnyAdmin()
+      );
+
+      allow create: if isSignedIn() &&
+                       isValidId(messageId) &&
+                       incoming().senderId == request.auth.uid &&
+                       (incoming().customerId == request.auth.uid || incoming().providerId == request.auth.uid) &&
+                       incoming().keys().hasAll([
+                         'conversationId', 'customerId', 'providerId', 'senderId',
+                         'senderName', 'text', 'isRead', 'createdAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'conversationId', 'customerId', 'providerId', 'senderId',
+                         'senderName', 'text', 'isRead', 'createdAt'
+                       ]) &&
+                       isValidChatMessage(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(messageId) &&
+                       isValidChatMessage(incoming()) &&
+                       incoming().conversationId == existing().conversationId &&
+                       incoming().customerId == existing().customerId &&
+                       incoming().providerId == existing().providerId &&
+                       incoming().senderId == existing().senderId &&
+                       incoming().createdAt == existing().createdAt &&
+                       (request.auth.uid == existing().customerId || request.auth.uid == existing().providerId) &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['isRead']);
+
+      allow delete: if isFounder() && isValidId(messageId);
+    }
+
+    // Collection 6: Notifications
+    match /notifications/{notificationId} {
+      allow get: if isSignedIn() && isValidId(notificationId) && (
+        resource == null || resource.data.userId == request.auth.uid || isAnyAdmin()
+      );
+
+      allow list: if isSignedIn() && (
+        resource.data.userId == request.auth.uid || isAnyAdmin()
+      );
+
+      allow create: if isSignedIn() &&
+                       isValidId(notificationId) &&
+                       incoming().senderId == request.auth.uid &&
+                       incoming().keys().hasAll([
+                         'userId', 'senderId', 'title', 'body', 'type',
+                         'relatedId', 'isRead', 'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'senderId', 'title', 'body', 'type',
+                         'relatedId', 'isRead', 'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidNotification(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(notificationId) &&
+                       isValidNotification(incoming()) &&
+                       resource.data.userId == request.auth.uid &&
+                       incoming().userId == existing().userId &&
+                       incoming().senderId == existing().senderId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['isRead', 'updatedAt']);
+
+      allow delete: if isSignedIn() && isValidId(notificationId) && (
+        resource.data.userId == request.auth.uid || isFounder()
+      );
+    }
+
+    // Collection 7: Reviews
+    match /reviews/{bookingId} {
+      allow get: if isSignedIn() && isValidId(bookingId) && (
+        resource == null ||
+        resource.data.moderationStatus == 'published' ||
+        resource.data.customerId == request.auth.uid ||
+        resource.data.providerId == request.auth.uid ||
+        isAnyAdmin()
+      );
+
+      allow list: if isSignedIn() && (
+        resource.data.moderationStatus == 'published' ||
+        resource.data.customerId == request.auth.uid ||
+        resource.data.providerId == request.auth.uid ||
+        isAnyAdmin()
+      );
+
+      allow create: if isSignedIn() &&
+                       isValidId(bookingId) &&
+                       incoming().bookingId == bookingId &&
+                       incoming().customerId == request.auth.uid &&
+                       incoming().moderationStatus == 'published' &&
+                       incoming().keys().hasAll([
+                         'bookingId', 'serviceId', 'providerId', 'customerId', 'customerName',
+                         'rating', 'comment', 'isReported', 'moderationStatus', 'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'bookingId', 'serviceId', 'providerId', 'customerId', 'customerName',
+                         'rating', 'comment', 'isReported', 'moderationStatus', 'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidReview(incoming()) &&
+                       exists(/databases/$(database)/documents/booking_requests/$(bookingId)) &&
+                       get(/databases/$(database)/documents/booking_requests/$(bookingId)).data.customerId == request.auth.uid &&
+                       get(/databases/$(database)/documents/booking_requests/$(bookingId)).data.status == 'completed';
+
+      allow update: if isSignedIn() &&
+                       isValidId(bookingId) &&
+                       isValidReview(incoming()) &&
+                       incoming().bookingId == existing().bookingId &&
+                       incoming().customerId == existing().customerId &&
+                       incoming().providerId == existing().providerId &&
+                       incoming().serviceId == existing().serviceId &&
+                       incoming().createdAt == existing().createdAt && (
+                         (incoming().moderationStatus == existing().moderationStatus &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['isReported', 'updatedAt'])) ||
+                         (isAnyAdmin() &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['isReported', 'moderationStatus', 'updatedAt']))
+                       );
+
+      allow delete: if isFounder() && isValidId(bookingId);
+    }
+
+    // Collection 8: User Favourites Subcollection
+    match /users/{userId}/favourites/{favId} {
+      allow get: if isSignedIn() && isValidId(userId) && isValidId(favId) && request.auth.uid == userId;
+
+      allow list: if isSignedIn() && request.auth.uid == userId && resource.data.userId == request.auth.uid;
+
+      allow create: if isSignedIn() &&
+                       isValidId(userId) &&
+                       isValidId(favId) &&
+                       request.auth.uid == userId &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().keys().hasAll([
+                         'userId', 'targetId', 'targetType', 'title', 'subtitle', 'location', 'price', 'createdAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'targetId', 'targetType', 'title', 'subtitle', 'location', 'price', 'createdAt'
+                       ]) &&
+                       isValidFavourite(incoming());
+
+      allow update: if false;
+
+      allow delete: if isSignedIn() && isValidId(userId) && isValidId(favId) && request.auth.uid == userId;
+    }
+
+    // Collection 9: Provider Verification Submissions (Co-Founder, CEO, Founder review)
+    match /verification_submissions/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && (
+        request.auth.uid == userId || isAnyAdmin()
+      );
+
+      allow list: if isSignedIn() && (
+        resource.data.userId == request.auth.uid || isAnyAdmin()
+      );
+
+      allow create: if isSignedIn() &&
+                       isValidId(userId) &&
+                       request.auth.uid == userId &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().status == 'pending_review' &&
+                       incoming().keys().hasAll([
+                         'userId', 'legalName', 'businessName', 'category', 'city',
+                         'experienceYears', 'portfolioSummary', 'documentReferenceNote',
+                         'status', 'adminNote', 'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'legalName', 'businessName', 'category', 'city',
+                         'experienceYears', 'portfolioSummary', 'documentReferenceNote',
+                         'status', 'adminNote', 'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidVerificationSubmission(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(userId) &&
+                       isValidVerificationSubmission(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt && (
+                         (request.auth.uid == userId &&
+                          incoming().status == 'pending_review' &&
+                          incoming().adminNote == existing().adminNote &&
+                          incoming().diff(existing()).affectedKeys().hasOnly([
+                            'legalName', 'businessName', 'category', 'city', 'experienceYears',
+                            'portfolioSummary', 'documentReferenceNote', 'status', 'updatedAt'
+                          ])) ||
+                         (isAnyAdmin() &&
+                          incoming().diff(existing()).affectedKeys().hasOnly([
+                            'status', 'adminNote', 'updatedAt'
+                          ]))
+                       );
+
+      allow delete: if isSignedIn() && isValidId(userId) && (request.auth.uid == userId || isFounder());
+    }
+
+    // Collection 10: Safety Reports
+    match /reports/{reportId} {
+      allow get: if isSignedIn() && isValidId(reportId) && (
+        resource == null || resource.data.reporterId == request.auth.uid || isAnyAdmin()
+      );
+
+      allow list: if isSignedIn() && (
+        resource.data.reporterId == request.auth.uid || isAnyAdmin()
+      );
+
+      allow create: if isSignedIn() &&
+                       isValidId(reportId) &&
+                       incoming().reporterId == request.auth.uid &&
+                       incoming().status == 'open' &&
+                       incoming().keys().hasAll([
+                         'reporterId', 'targetId', 'targetType', 'reason', 'details',
+                         'status', 'adminResolution', 'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'reporterId', 'targetId', 'targetType', 'reason', 'details',
+                         'status', 'adminResolution', 'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidSafetyReport(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(reportId) &&
+                       isValidSafetyReport(incoming()) &&
+                       isAnyAdmin() &&
+                       incoming().reporterId == existing().reporterId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'status', 'adminResolution', 'updatedAt'
+                       ]);
+
+      allow delete: if isFounder() && isValidId(reportId);
+    }
+
+    // Collection 11: Support Tickets
+    match /support_tickets/{ticketId} {
+      allow get: if isSignedIn() && isValidId(ticketId) && (
+        resource == null || resource.data.userId == request.auth.uid || isAnyAdmin()
+      );
+
+      allow list: if isSignedIn() && (
+        resource.data.userId == request.auth.uid || isAnyAdmin()
+      );
+
+      allow create: if isSignedIn() &&
+                       isValidId(ticketId) &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().status == 'open' &&
+                       incoming().keys().hasAll([
+                         'userId', 'name', 'contactEmail', 'category', 'relatedBookingId',
+                         'description', 'status', 'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'name', 'contactEmail', 'category', 'relatedBookingId',
+                         'description', 'status', 'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidSupportTicket(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(ticketId) &&
+                       isValidSupportTicket(incoming()) &&
+                       isAnyAdmin() &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']);
+
+      allow delete: if isFounder() && isValidId(ticketId);
+    }
+
+    // Collection 12: Platform Settings (CEO operational settings; Founder full emergency/security controls; Co-Founder denied write)
+    match /platform_settings/{settingId} {
+      allow get: if isSignedIn() && isValidId(settingId) && (
+        resource == null || settingId == 'global' || resource.data.settingKey == 'global' || isAnyAdmin()
+      );
+
+      allow list: if isSignedIn() && (
+        resource.data.settingKey == 'global' || isAnyAdmin()
+      );
+
+      allow create: if isSignedIn() &&
+                       isValidId(settingId) &&
+                       isCeoOrFounder() &&
+                       isValidPlatformSetting(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(settingId) &&
+                       isValidPlatformSetting(incoming()) &&
+                       incoming().settingKey == existing().settingKey &&
+                       incoming().createdAt == existing().createdAt && (
+                         // CEO can update operational settings but NOT maintenanceMode or sessionTimeoutMinutes
+                         (isCeo() &&
+                          incoming().diff(existing()).affectedKeys().hasOnly([
+                            'announcementText', 'announcementActive', 'freeListingLimit',
+                            'premiumPriceInr', 'billingPeriod', 'paymentsDemoMode', 'updatedBy', 'updatedAt'
+                          ])) ||
+                         // Founder can update all platform settings including maintenanceMode and sessionTimeoutMinutes
+                         (isFounder() &&
+                          incoming().diff(existing()).affectedKeys().hasOnly([
+                            'announcementText', 'announcementActive', 'freeListingLimit',
+                            'premiumPriceInr', 'billingPeriod', 'paymentsDemoMode',
+                            'maintenanceMode', 'sessionTimeoutMinutes', 'updatedBy', 'updatedAt'
+                          ]))
+                       );
+
+      allow delete: if false;
+    }
+
+    // Collection 13: Tiered Executive Admin Registry (/admins/{adminUid})
+    match /admins/{adminUid} {
+      allow get: if isSignedIn() && isValidId(adminUid) && (
+        request.auth.uid == adminUid || isFounder() || isCeo()
+      );
+
+      allow list: if isFounder() || isCeo();
+
+      // Secure provisioning of the 3 distinct executive admin accounts with salted SHA-256 verifier hash
+      allow create: if isSignedIn() &&
+                       isValidId(adminUid) &&
+                       (request.auth.uid == adminUid || isFounder()) &&
+                       incoming().keys().hasAll([
+                         'adminUid', 'canonicalAccountId', 'adminRole', 'displayName', 'username',
+                         'passwordVerifierHash', 'passwordSalt', 'mustChangePassword', 'failedAttempts',
+                         'lockedUntilEpochMs', 'founderSessionPersistent', 'sessionExpiresAt',
+                         'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'adminUid', 'canonicalAccountId', 'adminRole', 'displayName', 'username',
+                         'passwordVerifierHash', 'passwordSalt', 'mustChangePassword', 'failedAttempts',
+                         'lockedUntilEpochMs', 'founderSessionPersistent', 'sessionExpiresAt',
+                         'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidAdminAccount(incoming(), adminUid);
+
+      // Admin can refresh their own sessionExpiresAt or rotate password hash, but CANNOT self-escalate adminRole!
+      // Founder can manage any admin account or role.
+      allow update: if isSignedIn() &&
+                       isValidId(adminUid) &&
+                       isValidAdminAccount(incoming(), adminUid) &&
+                       incoming().adminUid == existing().adminUid &&
+                       incoming().createdAt == existing().createdAt && (
+                         (request.auth.uid == adminUid &&
+                          incoming().adminRole == existing().adminRole &&
+                          incoming().canonicalAccountId == existing().canonicalAccountId &&
+                          incoming().diff(existing()).affectedKeys().hasOnly([
+                            'username', 'passwordVerifierHash', 'passwordSalt', 'mustChangePassword',
+                            'failedAttempts', 'lockedUntilEpochMs', 'sessionExpiresAt', 'updatedAt'
+                          ])) ||
+                         isFounder()
+                       );
+
+      allow delete: if isFounder() && isValidId(adminUid);
+    }
+
+    // Collection 14: Payments, Refunds, Payouts & Subscriptions Ledger
+    // Co-Founder cannot access full payment ledger or execute refunds; CEO approves refunds <= ₹10,000; Founder unlimited
+    match /payments/{paymentId} {
+      allow get: if isSignedIn() && isValidId(paymentId) && (
+        resource == null ||
+        resource.data.userId == request.auth.uid ||
+        resource.data.providerId == request.auth.uid ||
+        isCeoOrFounder()
+      );
+
+      allow list: if isSignedIn() && (
+        resource.data.userId == request.auth.uid ||
+        resource.data.providerId == request.auth.uid ||
+        isCeoOrFounder()
+      );
+
+      allow create: if isSignedIn() &&
+                       isValidId(paymentId) &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().keys().hasAll([
+                         'userId', 'providerId', 'bookingId', 'paymentType', 'method',
+                         'amountInr', 'status', 'transactionRef', 'notes', 'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'providerId', 'bookingId', 'paymentType', 'method',
+                         'amountInr', 'status', 'transactionRef', 'notes', 'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidPaymentRecord(incoming()) &&
+                       (incoming().paymentType != 'subscription' || incoming().status == 'pending');
+
+      allow update: if isSignedIn() &&
+                       isValidId(paymentId) &&
+                       isValidPaymentRecord(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().providerId == existing().providerId &&
+                       incoming().bookingId == existing().bookingId &&
+                       incoming().amountInr == existing().amountInr &&
+                       incoming().createdAt == existing().createdAt && (
+                         // Customer or Provider can request refund_pending or mark disputed, but cannot self-approve 'refunded' or 'paid_out'
+                         ((request.auth.uid == existing().userId || request.auth.uid == existing().providerId) &&
+                          incoming().status in ['pending', 'processing', 'refund_pending', 'disputed', 'failed'] &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['status', 'notes', 'updatedAt'])) ||
+                         // CEO can approve refunds/payouts up to ₹10,000 INR
+                         (isCeo() &&
+                          (incoming().status != 'refunded' || existing().amountInr <= 10000) &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['status', 'transactionRef', 'notes', 'updatedAt'])) ||
+                         // Founder has unlimited financial & refund approval authority
+                         (isFounder() &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['status', 'transactionRef', 'notes', 'updatedAt']))
+                       );
+
+      allow delete: if false;
+    }
+
+    // Collection 15: Immutable Admin Audit Logs
+    match /audit_logs/{logId} {
+      allow get, list: if isAnyAdmin();
+
+      allow create: if isAnyAdmin() &&
+                       isValidId(logId) &&
+                       incoming().adminId == request.auth.uid &&
+                       incoming().keys().hasAll([
+                         'adminId', 'adminEmail', 'actionType', 'targetCollection',
+                         'targetId', 'reason', 'previousState', 'newState', 'createdAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'adminId', 'adminEmail', 'actionType', 'targetCollection',
+                         'targetId', 'reason', 'previousState', 'newState', 'createdAt'
+                       ]) &&
+                       isValidAdminAuditLog(incoming());
+
+      allow update, delete: if false;
+    }
+
+    // Collection 16: Payment & Booking Disputes (/disputes/{disputeId})
+    match /disputes/{disputeId} {
+      allow get: if isSignedIn() && isValidId(disputeId) && (
+        resource == null ||
+        resource.data.customerId == request.auth.uid ||
+        resource.data.providerId == request.auth.uid ||
+        isAnyAdmin()
+      );
+
+      allow list: if isSignedIn() && (
+        resource.data.customerId == request.auth.uid ||
+        resource.data.providerId == request.auth.uid ||
+        isAnyAdmin()
+      );
+
+      allow create: if isSignedIn() &&
+                       isValidId(disputeId) &&
+                       (incoming().customerId == request.auth.uid || incoming().providerId == request.auth.uid) &&
+                       incoming().status == 'open' &&
+                       incoming().keys().hasAll([
+                         'bookingId', 'paymentId', 'customerId', 'customerName', 'providerId',
+                         'providerName', 'disputedAmountInr', 'reason', 'customerStatement',
+                         'providerStatement', 'evidenceNote', 'status', 'assignedRole',
+                         'adminDecisionNote', 'decidedByAdminId', 'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'bookingId', 'paymentId', 'customerId', 'customerName', 'providerId',
+                         'providerName', 'disputedAmountInr', 'reason', 'customerStatement',
+                         'providerStatement', 'evidenceNote', 'status', 'assignedRole',
+                         'adminDecisionNote', 'decidedByAdminId', 'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidPaymentDispute(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(disputeId) &&
+                       isValidPaymentDispute(incoming()) &&
+                       incoming().bookingId == existing().bookingId &&
+                       incoming().customerId == existing().customerId &&
+                       incoming().providerId == existing().providerId &&
+                       incoming().disputedAmountInr == existing().disputedAmountInr &&
+                       incoming().createdAt == existing().createdAt && (
+                         // Customer can add statement and evidence
+                         (request.auth.uid == existing().customerId &&
+                          incoming().status == existing().status &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['customerStatement', 'evidenceNote', 'updatedAt'])) ||
+                         // Provider can add statement and evidence
+                         (request.auth.uid == existing().providerId &&
+                          incoming().status == existing().status &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['providerStatement', 'evidenceNote', 'updatedAt'])) ||
+                         // Co-Founder can review and escalate to CEO or Founder, but CANNOT mark resolved_refunded
+                         (isCoFounder() &&
+                          incoming().status in ['under_review', 'escalated_to_ceo', 'escalated_to_founder'] &&
+                          incoming().diff(existing()).affectedKeys().hasOnly([
+                            'status', 'assignedRole', 'adminDecisionNote', 'decidedByAdminId', 'updatedAt'
+                          ])) ||
+                         // CEO can resolve refunds up to ₹10,000 INR or escalate to Founder
+                         (isCeo() &&
+                          (incoming().status != 'resolved_refunded' || existing().disputedAmountInr <= 10000) &&
+                          incoming().diff(existing()).affectedKeys().hasOnly([
+                            'status', 'assignedRole', 'adminDecisionNote', 'decidedByAdminId', 'updatedAt'
+                          ])) ||
+                         // Founder can resolve any dispute for any amount
+                         (isFounder() &&
+                          incoming().diff(existing()).affectedKeys().hasOnly([
+                            'status', 'assignedRole', 'adminDecisionNote', 'decidedByAdminId', 'updatedAt'
+                          ]))
+                       );
+
+      allow delete: if false;
+    }
+  }
+}

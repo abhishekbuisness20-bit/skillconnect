@@ -1,0 +1,6 @@
+{
+  "name": "SkillConnect",
+  "description": "India's local services marketplace connecting customers with verified service providers, freelancers, and local professionals.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

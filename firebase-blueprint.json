@@ -1,0 +1,96 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Marketplace user or service provider profile with role, verification status, and skills",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "platformId": { "type": "string" },
+        "displayName": { "type": "string" },
+        "headline": { "type": "string" },
+        "bio": { "type": "string" },
+        "role": { "type": "string", "enum": ["customer", "provider"] },
+        "city": { "type": "string" },
+        "locality": { "type": "string" },
+        "preferredLanguage": { "type": "string", "enum": ["en", "hi"] },
+        "skills": { "type": "array", "items": { "type": "string" } },
+        "startingPrice": { "type": "integer" },
+        "availability": { "type": "string" },
+        "isVerified": { "type": "boolean" },
+        "verificationStatus": { "type": "string" },
+        "subscriptionPlan": { "type": "string", "enum": ["free", "premium"] },
+        "isPublicProvider": { "type": "boolean" },
+        "accountStatus": { "type": "string", "enum": ["active", "suspended"] },
+        "publicPhone": { "type": "string" },
+        "completedJobsCount": { "type": "integer" },
+        "ratingSum": { "type": "integer" },
+        "reviewCount": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "displayName", "role", "city", "isVerified", "verificationStatus", "accountStatus", "createdAt", "updatedAt"]
+    },
+    "AdminAccount": {
+      "title": "AdminAccount",
+      "description": "Tiered executive administrator account (Co-Founder, CEO, Founder) with canonical ID, salted verifier hash, and session deadline",
+      "type": "object",
+      "properties": {
+        "adminUid": { "type": "string" },
+        "canonicalAccountId": { "type": "string", "enum": ["ADM-COF-001", "ADM-CEO-001", "ADM-FND-001"] },
+        "adminRole": { "type": "string", "enum": ["cofounder", "ceo", "founder"] },
+        "displayName": { "type": "string" },
+        "username": { "type": "string" },
+        "passwordVerifierHash": { "type": "string" },
+        "passwordSalt": { "type": "string" },
+        "mustChangePassword": { "type": "boolean" },
+        "failedAttempts": { "type": "integer" },
+        "lockedUntilEpochMs": { "type": "integer" },
+        "founderSessionPersistent": { "type": "boolean" },
+        "sessionExpiresAt": { "type": "string", "format": "date-time" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["adminUid", "canonicalAccountId", "adminRole", "displayName", "username", "passwordVerifierHash", "passwordSalt", "sessionExpiresAt", "createdAt", "updatedAt"]
+    },
+    "PaymentDispute": {
+      "title": "PaymentDispute",
+      "description": "Structured payment and booking dispute record with customer/provider statements, evidence, assigned tier, and decision",
+      "type": "object",
+      "properties": {
+        "bookingId": { "type": "string" },
+        "paymentId": { "type": "string" },
+        "customerId": { "type": "string" },
+        "customerName": { "type": "string" },
+        "providerId": { "type": "string" },
+        "providerName": { "type": "string" },
+        "disputedAmountInr": { "type": "integer" },
+        "reason": { "type": "string" },
+        "customerStatement": { "type": "string" },
+        "providerStatement": { "type": "string" },
+        "evidenceNote": { "type": "string" },
+        "status": { "type": "string", "enum": ["open", "under_review", "escalated_to_ceo", "escalated_to_founder", "resolved_refunded", "resolved_rejected"] },
+        "assignedRole": { "type": "string", "enum": ["cofounder", "ceo", "founder"] },
+        "adminDecisionNote": { "type": "string" },
+        "decidedByAdminId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["bookingId", "paymentId", "customerId", "providerId", "disputedAmountInr", "reason", "status", "assignedRole", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/user_profiles/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "User and service provider profiles"
+    },
+    "/admins/{adminUid}": {
+      "schema": { "$ref": "#/entities/AdminAccount" },
+      "description": "Tiered Co-Founder, CEO, and Founder administrative accounts and session policies"
+    },
+    "/disputes/{disputeId}": {
+      "schema": { "$ref": "#/entities/PaymentDispute" },
+      "description": "Payment and booking dispute resolution records"
+    }
+  }
+}

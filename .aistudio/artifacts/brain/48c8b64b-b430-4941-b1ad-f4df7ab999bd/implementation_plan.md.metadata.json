@@ -1,0 +1,6 @@
+{
+  "summary":  "Implementation plan to configure the permanent merchant UPI ID (6393481228@ybl) across both the main Subscription screen and the Direct UPI Checkout dialog with Copy UPI ID and Open UPI App actions.",
+  "updatedAt":  "2026-10-29T16:26:49.012600678Z",
+  "requestFeedback":  true,
+  "userFacing":  true
+}
