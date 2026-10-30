@@ -1,6 +1,6 @@
 {
-  "summary":  "Implementation plan to configure the permanent merchant UPI ID (6393481228@ybl) across both the main Subscription screen and the Direct UPI Checkout dialog with Copy UPI ID and Open UPI App actions.",
-  "updatedAt":  "2026-10-29T16:26:49.012600678Z",
+  "summary":  "Implementation plan for 3-attempt Admin login limit, Admin-only message reading and deletion, self-only Booking & Login notices for Customers and Providers, Customer profile & dashboard Logout buttons, Admin Profile Approval with Blue Tick + Verified by SkillConnect badge, and full user detail inspection for Admins.",
+  "updatedAt":  "2026-10-30T02:08:49.505140310Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

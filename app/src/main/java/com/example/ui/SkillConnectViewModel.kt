@@ -392,8 +392,7 @@ class SkillConnectViewModel(
     @OptIn(ExperimentalCoroutinesApi::class)
     val adminAllBookingsState: StateFlow<List<BookingRequest>> = activeExecutiveRole
         .flatMapLatest { role ->
-            // Co-Founder does not read global booking ledger; only CEO & Founder
-            if (role in listOf("ceo", "founder")) {
+            if (role in listOf("cofounder", "ceo", "founder")) {
                 repository.observeAllBookingsForAdmin().catch { emit(emptyList()) }
             } else {
                 flowOf(emptyList())
@@ -404,9 +403,34 @@ class SkillConnectViewModel(
     @OptIn(ExperimentalCoroutinesApi::class)
     val adminAllPaymentsState: StateFlow<List<PaymentRecord>> = activeExecutiveRole
         .flatMapLatest { role ->
-            // Co-Founder has no access to payment ledger; only CEO & Founder
-            if (role in listOf("ceo", "founder")) {
+            if (role in listOf("cofounder", "ceo", "founder")) {
                 repository.observeAllPaymentsForAdmin().catch { emit(emptyList()) }
+            } else {
+                flowOf(emptyList())
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val adminAllConversationsState: StateFlow<List<Conversation>> = activeExecutiveRole
+        .flatMapLatest { role ->
+            if (role in listOf("cofounder", "ceo", "founder")) {
+                repository.observeAllConversationsForAdmin()
+                    .map { list -> list.sortedByDescending { it.updatedAt?.seconds ?: it.createdAt?.seconds ?: 0L } }
+                    .catch { emit(emptyList()) }
+            } else {
+                flowOf(emptyList())
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val adminAllMessagesState: StateFlow<List<ChatMessage>> = activeExecutiveRole
+        .flatMapLatest { role ->
+            if (role in listOf("cofounder", "ceo", "founder")) {
+                repository.observeAllMessagesForAdmin()
+                    .map { list -> list.sortedByDescending { it.createdAt?.seconds ?: 0L } }
+                    .catch { emit(emptyList()) }
             } else {
                 flowOf(emptyList())
             }
@@ -1684,6 +1708,55 @@ class SkillConnectViewModel(
                     showStatus("Support ticket marked $newStatus.")
                 }
                 .onFailure { e -> showError(e.localizedMessage ?: "Could not update ticket") }
+        }
+    }
+
+    fun adminDeleteMessage(messageId: String) {
+        if (!isAdminUser) {
+            showError("Only administrators can delete messages.")
+            return
+        }
+        viewModelScope.launch {
+            repository.adminDeleteMessage(messageId)
+                .onSuccess {
+                    repository.recordAdminAuditLog(
+                        adminEmail = currentUserEmail,
+                        actionType = "ADMIN_DELETE_MESSAGE",
+                        targetCollection = "messages",
+                        targetId = messageId,
+                        reason = "Admin deleted message",
+                        previousState = "active",
+                        newState = "deleted"
+                    )
+                    showStatus("Message deleted by Admin.")
+                }
+                .onFailure { e -> showError(e.localizedMessage ?: "Failed to delete message") }
+        }
+    }
+
+    fun adminDeleteConversation(conversationId: String) {
+        if (!isAdminUser) {
+            showError("Only administrators can delete conversation threads.")
+            return
+        }
+        viewModelScope.launch {
+            repository.adminDeleteConversation(conversationId)
+                .onSuccess {
+                    repository.recordAdminAuditLog(
+                        adminEmail = currentUserEmail,
+                        actionType = "ADMIN_DELETE_CONVERSATION",
+                        targetCollection = "conversations",
+                        targetId = conversationId,
+                        reason = "Admin deleted conversation thread and messages",
+                        previousState = "active",
+                        newState = "deleted"
+                    )
+                    if (_activeConversation.value?.id == conversationId) {
+                        _activeConversation.value = null
+                    }
+                    showStatus("Conversation thread deleted by Admin.")
+                }
+                .onFailure { e -> showError(e.localizedMessage ?: "Failed to delete conversation") }
         }
     }
 

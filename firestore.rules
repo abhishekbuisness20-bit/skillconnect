@@ -573,7 +573,7 @@ service cloud.firestore {
                           incoming().diff(existing()).affectedKeys().hasOnly(['ratingSum', 'reviewCount', 'updatedAt'])) ||
                          (isAnyAdmin() &&
                           incoming().diff(existing()).affectedKeys().hasOnly([
-                            'isPublished', 'isFeatured', 'moderationStatus', 'moderationReason', 'updatedAt'
+                            'providerVerified', 'isPublished', 'isFeatured', 'moderationStatus', 'moderationReason', 'updatedAt'
                           ]))
                        );
 
@@ -676,7 +676,7 @@ service cloud.firestore {
                          'lastMessage', 'unreadCustomerCount', 'unreadProviderCount', 'isBlocked', 'updatedAt'
                        ]);
 
-      allow delete: if isFounder() && isValidId(conversationId);
+      allow delete: if isAnyAdmin() && isValidId(conversationId);
     }
 
     // Collection 5: Messages (Strict Participant + Authorized Support Admin Isolation)
@@ -719,7 +719,7 @@ service cloud.firestore {
                        (request.auth.uid == existing().customerId || request.auth.uid == existing().providerId) &&
                        incoming().diff(existing()).affectedKeys().hasOnly(['isRead']);
 
-      allow delete: if isFounder() && isValidId(messageId);
+      allow delete: if isAnyAdmin() && isValidId(messageId);
     }
 
     // Collection 6: Notifications

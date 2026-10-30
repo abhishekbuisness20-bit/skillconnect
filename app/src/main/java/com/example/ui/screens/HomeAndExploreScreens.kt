@@ -1631,9 +1631,16 @@ fun ServiceListingCard(
                     Spacer(modifier = Modifier.width(4.dp))
                     Icon(
                         imageVector = Icons.Default.Verified,
-                        contentDescription = "Verified Provider",
-                        tint = SkillSuccessGreen,
-                        modifier = Modifier.size(15.dp)
+                        contentDescription = "Verified by SkillConnect",
+                        tint = SkillBlue,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "Verified by SkillConnect",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = SkillBlue,
+                        fontWeight = FontWeight.Bold
                     )
                 }
             }
@@ -1944,7 +1951,7 @@ fun ProviderDirectoryScreen(
                                 }
 
                                 Surface(
-                                    color = if (strictVerified) SkillSuccessGreen.copy(alpha = 0.14f) else SkillWarningAmber.copy(alpha = 0.14f),
+                                    color = if (strictVerified) SkillBlue.copy(alpha = 0.14f) else SkillWarningAmber.copy(alpha = 0.14f),
                                     shape = RoundedCornerShape(50)
                                 ) {
                                     Row(
@@ -1955,15 +1962,15 @@ fun ProviderDirectoryScreen(
                                         if (strictVerified) {
                                             Icon(
                                                 imageVector = Icons.Default.Verified,
-                                                contentDescription = "Verified by SkillConnect",
-                                                tint = SkillSuccessGreen,
-                                                modifier = Modifier.size(14.dp)
+                                                contentDescription = "Blue Tick Verified by SkillConnect",
+                                                tint = SkillBlue,
+                                                modifier = Modifier.size(15.dp)
                                             )
                                         }
                                         Text(
                                             text = prov.verificationBadgeLabel,
                                             style = MaterialTheme.typography.labelSmall,
-                                            color = if (strictVerified) SkillSuccessGreen else SkillWarningAmber,
+                                            color = if (strictVerified) SkillBlue else SkillWarningAmber,
                                             fontWeight = FontWeight.Bold
                                         )
                                     }
@@ -1989,7 +1996,20 @@ fun ProviderDirectoryScreen(
                                     )
                                 }
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Text(prov.displayName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Text(prov.displayName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                        if (strictVerified) {
+                                            Icon(
+                                                imageVector = Icons.Default.Verified,
+                                                contentDescription = "Blue Tick Verified by SkillConnect",
+                                                tint = SkillBlue,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
                                     Text(
                                         text = prov.headline.ifBlank { "${prov.primaryCategory} Professional" },
                                         style = MaterialTheme.typography.bodySmall,

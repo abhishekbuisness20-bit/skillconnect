@@ -403,11 +403,16 @@ fun SkillConnectAuthScreen(
     }
 
     fun triggerExecutiveAdminSignIn(adminRole: String) {
+        val maxAttempts = 3
         val now = System.currentTimeMillis()
         if (adminLockoutUntilMs > now) {
             val remainingSec = ((adminLockoutUntilMs - now) / 1000L).coerceAtLeast(1L)
-            errorMessage = "Too many failed login attempts. Try again in ${remainingSec}s."
+            errorMessage = "3 failed login attempts reached. Administrative login is locked — try again in ${remainingSec}s."
             return
+        } else if (adminLockoutUntilMs > 0L && failedAdminAttempts >= maxAttempts) {
+            // Lockout window expired; reset attempt counter for fresh 3 attempts
+            failedAdminAttempts = 0
+            adminLockoutUntilMs = 0L
         }
         if (!acceptedTerms) {
             errorMessage = "Please accept the Terms of Service and Privacy Policy to continue."
@@ -425,24 +430,31 @@ fun SkillConnectAuthScreen(
 
         if (!validUsername) {
             failedAdminAttempts += 1
-            if (failedAdminAttempts >= 5) {
+            val remaining = (maxAttempts - failedAdminAttempts).coerceAtLeast(0)
+            if (failedAdminAttempts >= maxAttempts) {
                 adminLockoutUntilMs = System.currentTimeMillis() + 60_000L
-            }
-            errorMessage = when (adminRole) {
-                "cofounder" -> "Invalid username for Co-Founder Login."
-                "ceo" -> "Invalid username for CEO Login."
-                "founder" -> "Invalid username for Founder Login."
-                else -> "Invalid executive username."
+                errorMessage = "Invalid username. 3 failed attempts reached — administrative login locked for 60 seconds."
+            } else {
+                val roleTitle = when (adminRole) {
+                    "cofounder" -> "CO-FOUNDER"
+                    "ceo" -> "CEO"
+                    "founder" -> "FOUNDER"
+                    else -> "ADMIN"
+                }
+                errorMessage = "Invalid username for $roleTitle Login. (Attempt $failedAdminAttempts of $maxAttempts — $remaining remaining)"
             }
             return
         }
 
         if (cleanPass.length < 6) {
             failedAdminAttempts += 1
-            if (failedAdminAttempts >= 5) {
+            val remaining = (maxAttempts - failedAdminAttempts).coerceAtLeast(0)
+            if (failedAdminAttempts >= maxAttempts) {
                 adminLockoutUntilMs = System.currentTimeMillis() + 60_000L
+                errorMessage = "Invalid administrative password. 3 failed attempts reached — administrative login locked for 60 seconds."
+            } else {
+                errorMessage = "Invalid administrative password (minimum 6 characters). (Attempt $failedAdminAttempts of $maxAttempts — $remaining remaining)"
             }
-            errorMessage = "Enter a valid administrative password (minimum 6 characters)."
             return
         }
 
@@ -1024,18 +1036,36 @@ fun SkillConnectAuthScreen(
                             // Show Username and Password fields ONLY after this specific login card is selected
                             if (isCardSelected) {
                                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                                val remainingAttempts = (3 - failedAdminAttempts).coerceAtLeast(0)
                                 Surface(
-                                    color = card.badgeColor.copy(alpha = 0.10f),
+                                    color = if (remainingAttempts == 0) MaterialTheme.colorScheme.error.copy(alpha = 0.12f) else card.badgeColor.copy(alpha = 0.10f),
                                     shape = RoundedCornerShape(10.dp),
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Text(
-                                        text = card.roleLabel,
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = card.badgeColor,
-                                        fontWeight = FontWeight.Bold,
-                                        modifier = Modifier.padding(10.dp)
-                                    )
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(10.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = card.roleLabel,
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = card.badgeColor,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            text = if (remainingAttempts == 0) {
+                                                "LOCKED (0/3 attempts left)"
+                                            } else {
+                                                "Max 3 Attempts ($remainingAttempts/3 left)"
+                                            },
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = if (remainingAttempts == 0) MaterialTheme.colorScheme.error else card.badgeColor,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
                                 }
 
                                 OutlinedTextField(

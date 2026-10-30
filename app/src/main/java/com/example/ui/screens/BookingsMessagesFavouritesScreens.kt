@@ -356,26 +356,46 @@ fun BookingsAndEnquiriesScreen(
 @Composable
 fun MessagesAndNotificationsScreen(
     currentUserId: String,
+    isAdminUser: Boolean = false,
+    userDisplayName: String = "",
+    userEmail: String = "",
+    userRole: String = "customer",
+    userPlatformId: String = "",
     conversations: List<Conversation>,
     activeConversation: Conversation?,
     messages: List<ChatMessage>,
     notifications: List<AppNotification>,
+    adminAllConversations: List<Conversation> = emptyList(),
+    adminAllMessages: List<ChatMessage> = emptyList(),
     onSelectConversation: (Conversation?) -> Unit,
     onSendMessage: (String) -> Unit,
     onMarkNotificationRead: (String) -> Unit,
     onMarkAllNotificationsRead: () -> Unit = {},
     onToggleBlockConversation: (String, Boolean) -> Unit = { _, _ -> },
-    onReportConversation: (targetId: String, reason: String, details: String) -> Unit
+    onReportConversation: (targetId: String, reason: String, details: String) -> Unit,
+    onAdminDeleteMessage: (String) -> Unit = {},
+    onAdminDeleteConversation: (String) -> Unit = {}
 ) {
-    var activeTab by remember { mutableStateOf("messages") } // "messages" or "notifications"
+    var activeTab by remember(isAdminUser) {
+        mutableStateOf(if (isAdminUser) "messages" else "notifications")
+    }
     var messageInput by remember { mutableStateOf("") }
     var showReportDialog by remember { mutableStateOf(false) }
 
-    if (activeConversation != null) {
-        val partnerName = if (activeConversation.customerId == currentUserId) {
-            activeConversation.providerName
-        } else {
-            activeConversation.customerName
+    // Strict self-only notifications for Customers and Service Providers
+    val selfNotifications = remember(notifications, currentUserId) {
+        notifications.filter { it.userId == currentUserId || it.userId.isBlank() }
+    }
+
+    val effectiveConversations = remember(isAdminUser, adminAllConversations, conversations) {
+        if (isAdminUser && adminAllConversations.isNotEmpty()) adminAllConversations else conversations
+    }
+
+    if (isAdminUser && activeConversation != null) {
+        val threadMessages = remember(messages, adminAllMessages, activeConversation.id) {
+            val adminFiltered = adminAllMessages.filter { it.conversationId == activeConversation.id }
+                .sortedBy { it.createdAt?.seconds ?: 0L }
+            if (adminFiltered.isNotEmpty()) adminFiltered else messages
         }
 
         Column(
@@ -399,17 +419,36 @@ fun MessagesAndNotificationsScreen(
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
                         }
                         Column {
-                            Text(partnerName, style = MaterialTheme.typography.titleMedium, color = Color.White, fontWeight = FontWeight.Bold)
-                            if (activeConversation.serviceTitle.isNotBlank()) {
-                                Text(
-                                    text = "Topic: ${activeConversation.serviceTitle}",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = Color.White.copy(alpha = 0.8f)
-                                )
-                            }
+                            Text(
+                                text = "${activeConversation.customerName} ↔ ${activeConversation.providerName}",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = if (activeConversation.serviceTitle.isNotBlank()) {
+                                    "Admin Message Inspector • Topic: ${activeConversation.serviceTitle}"
+                                } else {
+                                    "Admin Message Inspector (Read & Delete Enabled)"
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.White.copy(alpha = 0.8f)
+                            )
                         }
                     }
                     Row {
+                        IconButton(
+                            onClick = {
+                                onAdminDeleteConversation(activeConversation.id)
+                            },
+                            modifier = Modifier.testTag("admin_delete_conversation_btn")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Delete,
+                                contentDescription = "Delete Entire Conversation",
+                                tint = SkillErrorRed
+                            )
+                        }
                         IconButton(
                             onClick = {
                                 onToggleBlockConversation(activeConversation.id, !activeConversation.isBlocked)
@@ -420,9 +459,6 @@ fun MessagesAndNotificationsScreen(
                                 contentDescription = if (activeConversation.isBlocked) "Unblock Conversation" else "Block Conversation",
                                 tint = if (activeConversation.isBlocked) SkillErrorRed else Color.White
                             )
-                        }
-                        IconButton(onClick = { showReportDialog = true }) {
-                            Icon(Icons.Default.Flag, contentDescription = "Report Conversation", tint = Color.White)
                         }
                     }
                 }
@@ -446,16 +482,16 @@ fun MessagesAndNotificationsScreen(
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                if (messages.isEmpty()) {
+                if (threadMessages.isEmpty()) {
                     item {
                         Text(
-                            text = "Start the conversation by sharing project details, availability, or questions.",
+                            text = "No messages in this conversation thread.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 } else {
-                    items(messages, key = { it.id }) { msg ->
+                    items(threadMessages, key = { it.id }) { msg ->
                         val isMe = msg.senderId == currentUserId
                         val timeText = remember(msg.createdAt) {
                             val d = msg.createdAt?.toDate()
@@ -463,18 +499,27 @@ fun MessagesAndNotificationsScreen(
                         }
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = if (isMe) Arrangement.End else Arrangement.Start
+                            horizontalArrangement = if (isMe) Arrangement.End else Arrangement.Start,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
                             Surface(
                                 color = if (isMe) SkillBlue else MaterialTheme.colorScheme.surface,
                                 shape = RoundedCornerShape(14.dp),
                                 modifier = Modifier
+                                    .weight(1f, fill = false)
                                     .then(
                                         if (!isMe) Modifier.border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(14.dp))
                                         else Modifier
                                     )
                             ) {
                                 Column(modifier = Modifier.padding(12.dp)) {
+                                    Text(
+                                        text = "Sender: ${msg.senderName.ifBlank { msg.senderId.take(8) }}",
+                                        color = if (isMe) Color.White.copy(alpha = 0.85f) else SkillBlue,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
                                     Text(
                                         text = msg.text,
                                         color = if (isMe) Color.White else MaterialTheme.colorScheme.onSurface,
@@ -488,66 +533,25 @@ fun MessagesAndNotificationsScreen(
                                     )
                                 }
                             }
+                            IconButton(
+                                onClick = { onAdminDeleteMessage(msg.id) },
+                                modifier = Modifier.testTag("admin_delete_msg_${msg.id}")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = "Admin Delete Message",
+                                    tint = SkillErrorRed
+                                )
+                            }
                         }
                     }
                 }
             }
-
-            Surface(
-                color = MaterialTheme.colorScheme.surface,
-                shadowElevation = 4.dp,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedTextField(
-                        value = messageInput,
-                        onValueChange = { messageInput = it },
-                        enabled = !activeConversation.isBlocked,
-                        placeholder = { Text("Write a message...") },
-                        singleLine = true,
-                        modifier = Modifier
-                            .weight(1f)
-                            .testTag("chat_message_input")
-                    )
-                    Button(
-                        onClick = {
-                            if (messageInput.isNotBlank() && !activeConversation.isBlocked) {
-                                onSendMessage(messageInput)
-                                messageInput = ""
-                            }
-                        },
-                        enabled = !activeConversation.isBlocked,
-                        colors = ButtonDefaults.buttonColors(containerColor = SkillBlue),
-                        modifier = Modifier
-                            .height(50.dp)
-                            .testTag("chat_send_button")
-                    ) {
-                        Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send")
-                    }
-                }
-            }
-        }
-
-        if (showReportDialog) {
-            ReportDialog(
-                title = "Report Conversation Participant",
-                onDismiss = { showReportDialog = false },
-                onSubmit = { reason, details ->
-                    showReportDialog = false
-                    onReportConversation(activeConversation.id, reason, details)
-                }
-            )
         }
         return
     }
 
-    // Conversation List & Notifications Tabs
+    // Main Screen: Self Booking & Login Notices (for Customers & Providers) + Admin Message Moderation (for Admins)
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -565,11 +569,15 @@ fun MessagesAndNotificationsScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Messages & Notifications",
+                        text = if (isAdminUser) {
+                            "Admin Message Governance & Notices"
+                        } else {
+                            "My Booking Notices & Self Login Status"
+                        },
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold
                     )
-                    if (activeTab == "notifications" && notifications.any { !it.isRead }) {
+                    if (activeTab == "notifications" && selfNotifications.any { !it.isRead }) {
                         TextButton(onClick = onMarkAllNotificationsRead) {
                             Icon(Icons.Default.DoneAll, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(4.dp))
@@ -579,16 +587,24 @@ fun MessagesAndNotificationsScreen(
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     FilterChip(
-                        selected = activeTab == "messages",
-                        onClick = { activeTab = "messages" },
-                        label = { Text("Conversations (${conversations.size})") }
-                    )
-                    FilterChip(
                         selected = activeTab == "notifications",
                         onClick = { activeTab = "notifications" },
                         label = {
-                            val unread = notifications.count { !it.isRead }
-                            Text(if (unread > 0) "Notifications ($unread unread)" else "Notifications (${notifications.size})")
+                            val unread = selfNotifications.count { !it.isRead }
+                            Text(
+                                if (unread > 0) "My Booking & Login Notices ($unread)"
+                                else "My Booking & Login Notices (${selfNotifications.size})"
+                            )
+                        }
+                    )
+                    FilterChip(
+                        selected = activeTab == "messages",
+                        onClick = { activeTab = "messages" },
+                        label = {
+                            Text(
+                                if (isAdminUser) "Admin Messages (${effectiveConversations.size})"
+                                else "Messages (Admin Only)"
+                            )
                         }
                     )
                 }
@@ -596,10 +612,55 @@ fun MessagesAndNotificationsScreen(
         }
 
         if (activeTab == "messages") {
-            if (conversations.isEmpty()) {
+            if (!isAdminUser) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(20.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.surface,
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(1.5.dp, SkillBlue, RoundedCornerShape(16.dp))
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(20.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Notifications,
+                                contentDescription = null,
+                                tint = SkillBlue,
+                                modifier = Modifier.size(36.dp)
+                            )
+                            Text(
+                                text = "Messages Read & Delete Restricted to Admins",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = SkillBlue
+                            )
+                            Text(
+                                text = "Only SkillConnect Administrators (Co-Founder, CEO, Founder) can read and delete messages. Customers and Service Providers receive their own Booking Notices and Self Login status in the 'My Booking & Login Notices' tab.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Button(
+                                onClick = { activeTab = "notifications" },
+                                colors = ButtonDefaults.buttonColors(containerColor = SkillBlue)
+                            ) {
+                                Text("View My Booking & Login Notices")
+                            }
+                        }
+                    }
+                }
+            } else if (effectiveConversations.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
                     Text(
-                        text = "No active conversations yet. Open any service listing or booking and tap 'Message' to start a conversation.",
+                        text = "No platform conversations recorded yet.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -610,8 +671,7 @@ fun MessagesAndNotificationsScreen(
                     contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    items(conversations, key = { it.id }) { conv ->
-                        val partnerName = if (conv.customerId == currentUserId) conv.providerName else conv.customerName
+                    items(effectiveConversations, key = { it.id }) { conv ->
                         Surface(
                             color = MaterialTheme.colorScheme.surface,
                             shape = RoundedCornerShape(14.dp),
@@ -633,13 +693,17 @@ fun MessagesAndNotificationsScreen(
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Text(
-                                        text = partnerName.take(1).uppercase(),
+                                        text = conv.customerName.take(1).uppercase(),
                                         color = Color.White,
                                         fontWeight = FontWeight.Bold
                                     )
                                 }
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Text(partnerName, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                                    Text(
+                                        text = "${conv.customerName} ↔ ${conv.providerName}",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold
+                                    )
                                     if (conv.serviceTitle.isNotBlank()) {
                                         Text(conv.serviceTitle, style = MaterialTheme.typography.labelSmall, color = SkillBlue)
                                     }
@@ -647,7 +711,17 @@ fun MessagesAndNotificationsScreen(
                                         text = conv.lastMessage,
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 1
+                                        maxLines = 2
+                                    )
+                                }
+                                IconButton(
+                                    onClick = { onAdminDeleteConversation(conv.id) },
+                                    modifier = Modifier.testTag("admin_delete_conv_${conv.id}")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Delete,
+                                        contentDescription = "Delete Conversation",
+                                        tint = SkillErrorRed
                                     )
                                 }
                             }
@@ -656,21 +730,93 @@ fun MessagesAndNotificationsScreen(
                 }
             }
         } else {
-            if (notifications.isEmpty()) {
-                Box(modifier = Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
-                    Text(
-                        text = "No in-app notifications yet.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Self-Only Login Status Card (Shown to the signed-in Customer or Service Provider)
+                item {
+                    Surface(
+                        color = SkillNavy,
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("self_login_notice_card")
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "MY SELF LOGIN STATUS (PRIVATE TO YOU)",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = SkillSuccessGreen,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Surface(
+                                    color = SkillSuccessGreen.copy(alpha = 0.2f),
+                                    shape = RoundedCornerShape(50)
+                                ) {
+                                    Text(
+                                        text = "ACTIVE SELF SESSION",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = SkillSuccessGreen,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp)
+                                    )
+                                }
+                            }
+                            Text(
+                                text = "${userDisplayName.ifBlank { "Signed-In Member" }} (${userRole.uppercase()})",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Platform ID: ${userPlatformId.ifBlank { "SC-${userRole.take(3).uppercase()}" }} • Email: ${userEmail.ifBlank { "Verified Google Sign-In" }}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.White.copy(alpha = 0.85f)
+                            )
+                            Text(
+                                text = "Privacy Guarantee: Your login session and booking notices are visible only to you.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.White.copy(alpha = 0.72f)
+                            )
+                        }
+                    }
                 }
-            } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    items(notifications, key = { it.id }) { notif ->
+
+                if (selfNotifications.isEmpty()) {
+                    item {
+                        Surface(
+                            color = MaterialTheme.colorScheme.surface,
+                            shape = RoundedCornerShape(14.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(14.dp))
+                        ) {
+                            Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text(
+                                    text = "No Booking Notices Yet",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "When a booking request is sent, accepted, updated, or completed, your personal booking notice will appear here.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    items(selfNotifications, key = { it.id }) { notif ->
                         Surface(
                             color = if (!notif.isRead) SkillBlue.copy(alpha = 0.08f) else MaterialTheme.colorScheme.surface,
                             shape = RoundedCornerShape(14.dp),

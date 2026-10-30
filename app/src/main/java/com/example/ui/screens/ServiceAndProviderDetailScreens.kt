@@ -787,8 +787,13 @@ fun ProviderPublicProfileScreen(
                             )
                         }
                         Surface(
-                            color = if (strictVerified) SkillSuccessGreen.copy(alpha = 0.22f) else SkillWarningAmber.copy(alpha = 0.22f),
-                            shape = RoundedCornerShape(50)
+                            color = if (strictVerified) SkillBlue.copy(alpha = 0.25f) else SkillWarningAmber.copy(alpha = 0.22f),
+                            shape = RoundedCornerShape(50),
+                            modifier = Modifier.border(
+                                width = 1.dp,
+                                color = if (strictVerified) SkillCyan else SkillWarningAmber.copy(alpha = 0.5f),
+                                shape = RoundedCornerShape(50)
+                            )
                         ) {
                             Row(
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
@@ -798,15 +803,15 @@ fun ProviderPublicProfileScreen(
                                 if (strictVerified) {
                                     Icon(
                                         imageVector = Icons.Default.Verified,
-                                        contentDescription = "Verified by SkillConnect",
-                                        tint = SkillSuccessGreen,
-                                        modifier = Modifier.size(14.dp)
+                                        contentDescription = "Blue Tick Verified by SkillConnect",
+                                        tint = SkillCyan,
+                                        modifier = Modifier.size(15.dp)
                                     )
                                 }
                                 Text(
                                     text = displayProvider.verificationBadgeLabel,
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = if (strictVerified) SkillSuccessGreen else SkillWarningAmber,
+                                    color = if (strictVerified) Color.White else SkillWarningAmber,
                                     fontWeight = FontWeight.Bold
                                 )
                             }
@@ -845,9 +850,9 @@ fun ProviderPublicProfileScreen(
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Icon(
                                         imageVector = Icons.Default.Verified,
-                                        contentDescription = "Verified by SkillConnect",
-                                        tint = SkillSuccessGreen,
-                                        modifier = Modifier.size(20.dp)
+                                        contentDescription = "Blue Tick Verified by SkillConnect",
+                                        tint = SkillBlue,
+                                        modifier = Modifier.size(22.dp)
                                     )
                                 }
                             }

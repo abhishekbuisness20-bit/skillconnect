@@ -290,6 +290,22 @@ class SkillConnectRepository(private val db: FirebaseFirestore) {
         }
         try {
             docRef.update(updates).await()
+            // Sync Blue Tick / Verified by SkillConnect status across all service listings owned by this provider
+            runCatching {
+                val providerServices = db.collection("services")
+                    .whereEqualTo("providerId", targetUserId)
+                    .get()
+                    .await()
+                val strictActive = isVerified && verificationStatus == "approved" && accountStatus == "active"
+                for (srvDoc in providerServices.documents) {
+                    srvDoc.reference.update(
+                        mapOf(
+                            "providerVerified" to strictActive,
+                            "updatedAt" to FieldValue.serverTimestamp()
+                        )
+                    ).await()
+                }
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -900,6 +916,65 @@ class SkillConnectRepository(private val db: FirebaseFirestore) {
                 }
                 throw e
             }
+    }
+
+    fun observeAllConversationsForAdmin(): Flow<List<Conversation>> =
+        db.collection("conversations")
+            .snapshots()
+            .map { snapshot ->
+                snapshot.toObjects(Conversation::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+            }
+            .catch { e ->
+                if (e is Exception && e !is CancellationException) {
+                    handleFirestoreError(e, OperationType.LIST, "conversations")
+                }
+                throw e
+            }
+
+    fun observeAllMessagesForAdmin(): Flow<List<ChatMessage>> =
+        db.collection("messages")
+            .snapshots()
+            .map { snapshot ->
+                snapshot.toObjects(ChatMessage::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+            }
+            .catch { e ->
+                if (e is Exception && e !is CancellationException) {
+                    handleFirestoreError(e, OperationType.LIST, "messages")
+                }
+                throw e
+            }
+
+    suspend fun adminDeleteMessage(messageId: String): Result<Unit> = runCatching {
+        requireUserId()
+        val msgRef = db.collection("messages").document(messageId)
+        try {
+            msgRef.delete().await()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.DELETE, msgRef.path)
+            throw e
+        }
+    }
+
+    suspend fun adminDeleteConversation(conversationId: String): Result<Unit> = runCatching {
+        requireUserId()
+        val convRef = db.collection("conversations").document(conversationId)
+        try {
+            val msgs = db.collection("messages")
+                .whereEqualTo("conversationId", conversationId)
+                .get()
+                .await()
+            for (doc in msgs.documents) {
+                runCatching { doc.reference.delete().await() }
+            }
+            convRef.delete().await()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.DELETE, convRef.path)
+            throw e
+        }
     }
 
     suspend fun getOrCreateConversation(
@@ -1742,8 +1817,9 @@ class SkillConnectRepository(private val db: FirebaseFirestore) {
 
                 val computedHash = hashAdminPassword(cleanPassword, existing.passwordSalt)
                 if (!computedHash.equals(existing.passwordVerifierHash, ignoreCase = true)) {
-                    val nextFailed = existing.failedAttempts + 1L
-                    val lockUntil = if (nextFailed >= 5L) nowMs + 60_000L else 0L
+                    val baseAttempts = if (existing.failedAttempts >= 3L) 0L else existing.failedAttempts
+                    val nextFailed = baseAttempts + 1L
+                    val lockUntil = if (nextFailed >= 3L) nowMs + 60_000L else 0L
                     docRef.update(
                         mapOf(
                             "failedAttempts" to nextFailed,
@@ -1752,10 +1828,10 @@ class SkillConnectRepository(private val db: FirebaseFirestore) {
                         )
                     ).await()
                     if (lockUntil > 0L) {
-                        throw IllegalArgumentException("Invalid administrative password. 5 failed attempts reached — locked for 60 seconds.")
+                        throw IllegalArgumentException("Invalid administrative password. 3 failed attempts reached — locked for 60 seconds.")
                     } else {
-                        val left = (5L - nextFailed).coerceAtLeast(0L)
-                        throw IllegalArgumentException("Invalid administrative password ($left attempts remaining before 60s lockout).")
+                        val left = (3L - nextFailed).coerceAtLeast(0L)
+                        throw IllegalArgumentException("Invalid administrative password (Attempt $nextFailed of 3 — $left attempts remaining before 60s lockout).")
                     }
                 }
 

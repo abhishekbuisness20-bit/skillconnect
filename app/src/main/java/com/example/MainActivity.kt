@@ -326,6 +326,8 @@ fun SkillConnectMainShell(
     val allAdmins by viewModel.allAdminsState.collectAsStateWithLifecycle()
     val myDisputes by viewModel.myDisputesState.collectAsStateWithLifecycle()
     val adminAllDisputes by viewModel.adminAllDisputesState.collectAsStateWithLifecycle()
+    val adminAllConversations by viewModel.adminAllConversationsState.collectAsStateWithLifecycle()
+    val adminAllMessages by viewModel.adminAllMessagesState.collectAsStateWithLifecycle()
     val globalSettings by viewModel.globalSettingsState.collectAsStateWithLifecycle()
     val prefs by viewModel.userPreferences.collectAsStateWithLifecycle()
     val selectedServiceId by viewModel.selectedServiceId.collectAsStateWithLifecycle()
@@ -816,7 +818,12 @@ fun SkillConnectMainShell(
                                     onRequestRefund = { bk, reason ->
                                         viewModel.requestBookingRefund(bk, reason)
                                     },
-                                    onNavigate = { viewModel.navigateTo(it) }
+                                    onNavigate = { viewModel.navigateTo(it) },
+                                    onSignOut = {
+                                        viewModel.performFullLogout {
+                                            performSignOut(credentialManager, {}, scope)
+                                        }
+                                    }
                                 )
                             }
 
@@ -852,7 +859,12 @@ fun SkillConnectMainShell(
                                 onRequestPayout = { amount, upiOrBank ->
                                     viewModel.requestProviderPayout(amount, upiOrBank)
                                 },
-                                onNavigate = { viewModel.navigateTo(it) }
+                                onNavigate = { viewModel.navigateTo(it) },
+                                onSignOut = {
+                                    viewModel.performFullLogout {
+                                        performSignOut(credentialManager, {}, scope)
+                                    }
+                                }
                             )
 
                             AppDestination.PROVIDER_ONBOARDING_WIZARD -> ProviderOnboardingWizardScreen(
@@ -925,22 +937,37 @@ fun SkillConnectMainShell(
 
                             AppDestination.MESSAGES -> MessagesAndNotificationsScreen(
                                 currentUserId = viewModel.currentUserId,
+                                isAdminUser = hasAdminAccess,
+                                userDisplayName = myProfile?.displayName?.ifBlank { viewModel.currentUserDisplayName }
+                                    ?: viewModel.currentUserDisplayName,
+                                userEmail = viewModel.currentUserEmail,
+                                userRole = myProfile?.role ?: "customer",
+                                userPlatformId = myProfile?.effectivePlatformId.orEmpty(),
                                 conversations = conversations,
+                                adminAllConversations = adminAllConversations,
                                 activeConversation = activeConversation,
                                 messages = activeMessages,
+                                adminAllMessages = adminAllMessages,
                                 notifications = notifications,
                                 onSelectConversation = { viewModel.selectConversation(it) },
                                 onSendMessage = { viewModel.sendChatMessage(it) },
                                 onMarkNotificationRead = { viewModel.markNotificationRead(it) },
                                 onMarkAllNotificationsRead = { viewModel.markAllNotificationsRead() },
                                 onToggleBlockConversation = { convId, _ ->
-                                    val targetConv = conversations.firstOrNull { it.id == convId } ?: activeConversation
+                                    val targetConv = (conversations + adminAllConversations).firstOrNull { it.id == convId }
+                                        ?: activeConversation
                                     if (targetConv != null) {
                                         viewModel.toggleBlockConversation(targetConv)
                                     }
                                 },
                                 onReportConversation = { id, reason, details ->
                                     viewModel.submitSafetyReport(id, "user", reason, details)
+                                },
+                                onAdminDeleteMessage = { msgId ->
+                                    viewModel.adminDeleteMessage(msgId)
+                                },
+                                onAdminDeleteConversation = { convId ->
+                                    viewModel.adminDeleteConversation(convId)
                                 }
                             )
 
@@ -1068,6 +1095,8 @@ fun SkillConnectMainShell(
                                 allVerifications = adminAllVerifications,
                                 allBookings = adminAllBookings,
                                 allPayments = adminAllPayments,
+                                allConversations = adminAllConversations,
+                                allMessages = adminAllMessages,
                                 reviews = publishedReviews,
                                 reports = if (adminAllReports.isNotEmpty()) adminAllReports else myReports,
                                 supportTickets = if (adminAllTickets.isNotEmpty()) adminAllTickets else mySupportTickets,
@@ -1123,6 +1152,12 @@ fun SkillConnectMainShell(
                                 },
                                 onHandleDispute = { dispute, newStatus, assignedRole, decisionNote ->
                                     viewModel.adminHandleDispute(dispute, newStatus, assignedRole, decisionNote)
+                                },
+                                onDeleteMessage = { msgId ->
+                                    viewModel.adminDeleteMessage(msgId)
+                                },
+                                onDeleteConversation = { convId ->
+                                    viewModel.adminDeleteConversation(convId)
                                 },
                                 onLoginExecutiveAdmin = { role, username, password ->
                                     viewModel.loginOrProvisionExecutiveAdmin(role, username, password)

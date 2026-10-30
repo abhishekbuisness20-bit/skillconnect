@@ -21,6 +21,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
@@ -94,6 +95,7 @@ fun CustomerDashboardScreen(
     onSubmitReview: (BookingRequest, Int, String) -> Unit,
     onPayBooking: (BookingRequest, String) -> Unit = { _, _ -> },
     onRequestRefund: (BookingRequest, String) -> Unit = { _, _ -> },
+    onSignOut: () -> Unit = {},
     onNavigate: (AppDestination) -> Unit
 ) {
     val firstName = (profile?.displayName?.ifBlank { fallbackName } ?: fallbackName)
@@ -111,6 +113,7 @@ fun CustomerDashboardScreen(
     var cancelTargetBooking by remember { mutableStateOf<BookingRequest?>(null) }
     var paymentTargetBooking by remember { mutableStateOf<BookingRequest?>(null) }
     var refundTargetBooking by remember { mutableStateOf<BookingRequest?>(null) }
+    var showCustomerLogoutConfirm by remember { mutableStateOf(false) }
 
     LazyColumn(
         modifier = Modifier
@@ -119,7 +122,7 @@ fun CustomerDashboardScreen(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Customer Header with Unique SC-CUS-XXXXXXXX ID
+        // Customer Header with Unique SC-CUS-XXXXXXXX ID + Direct Logout Option
         item {
             Card(
                 shape = RoundedCornerShape(18.dp),
@@ -155,12 +158,15 @@ fun CustomerDashboardScreen(
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Customer Dashboard • Track your service enquiries, accepted bookings, payments, and saved professionals.",
+                        text = "Customer Profile & Dashboard • Track your service enquiries, accepted bookings, payments, and saved professionals.",
                         style = MaterialTheme.typography.bodySmall,
                         color = Color.White.copy(alpha = 0.82f)
                     )
                     Spacer(modifier = Modifier.height(10.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(
+                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
                         Button(
                             onClick = { onNavigate(AppDestination.EXPLORE) },
                             colors = ButtonDefaults.buttonColors(containerColor = SkillBlue)
@@ -170,8 +176,36 @@ fun CustomerDashboardScreen(
                         OutlinedButton(onClick = { onNavigate(AppDestination.PROVIDER_DIRECTORY) }) {
                             Text("Provider Directory", color = Color.White)
                         }
+                        OutlinedButton(onClick = { onNavigate(AppDestination.PROFILE_SETTINGS) }) {
+                            Text("Customer Profile", color = Color.White)
+                        }
                     }
                 }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Direct Logout Button right below Customer Profile Card
+            Button(
+                onClick = { showCustomerLogoutConfirm = true },
+                colors = ButtonDefaults.buttonColors(containerColor = SkillErrorRed),
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+                    .testTag("customer_dashboard_logout_button")
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.Logout,
+                    contentDescription = "Logout",
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Logout from Customer Profile",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold
+                )
             }
         }
 
@@ -480,6 +514,33 @@ fun CustomerDashboardScreen(
             }
         )
     }
+
+    if (showCustomerLogoutConfirm) {
+        AlertDialog(
+            onDismissRequest = { showCustomerLogoutConfirm = false },
+            title = { Text("Confirm Logout", fontWeight = FontWeight.Bold) },
+            text = {
+                Text("Are you sure you want to log out of your Customer Profile and return to the initial login page?")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showCustomerLogoutConfirm = false
+                        onSignOut()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = SkillErrorRed),
+                    modifier = Modifier.testTag("confirm_customer_dashboard_logout_btn")
+                ) {
+                    Text("Yes, Logout")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCustomerLogoutConfirm = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -501,6 +562,7 @@ fun ProviderDashboardScreen(
     onOpenOnboardingWizard: () -> Unit = {},
     onOpenPublicProfile: () -> Unit = {},
     onRequestPayout: (Long, String) -> Unit = { _, _ -> },
+    onSignOut: () -> Unit = {},
     onNavigate: (AppDestination) -> Unit = {}
 ) {
     val newEnquiries = providerBookings.count { it.status == "pending" }
@@ -522,6 +584,7 @@ fun ProviderDashboardScreen(
     var declineBookingTarget by remember { mutableStateOf<BookingRequest?>(null) }
     var payoutAmountText by remember { mutableStateOf("2500") }
     var payoutUpiId by remember { mutableStateOf("provider@upi") }
+    var showProviderLogoutConfirm by remember { mutableStateOf(false) }
 
     // All 19 Provider Workspace Sections
     val providerSections = listOf(
@@ -581,17 +644,61 @@ fun ProviderDashboardScreen(
                                 )
                             }
                             Spacer(modifier = Modifier.height(6.dp))
-                            Text(
-                                text = "Provider Workspace",
-                                style = MaterialTheme.typography.headlineSmall,
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = "Badge Status: ${profile?.verificationBadgeLabel ?: "Verification Not Submitted"}",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = if (profile?.isStrictVerifiedBadgeActive == true) SkillSuccessGreen else SkillWarningAmber
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(
+                                    text = profile?.displayName?.ifBlank { "Provider Workspace" } ?: "Provider Workspace",
+                                    style = MaterialTheme.typography.headlineSmall,
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                if (profile?.isStrictVerifiedBadgeActive == true) {
+                                    Icon(
+                                        imageVector = Icons.Default.VerifiedUser,
+                                        contentDescription = "Blue Tick Verified by SkillConnect",
+                                        tint = SkillBlue,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
+                            }
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                if (profile?.isStrictVerifiedBadgeActive == true) {
+                                    Surface(
+                                        color = SkillBlue,
+                                        shape = RoundedCornerShape(50)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.VerifiedUser,
+                                                contentDescription = null,
+                                                tint = Color.White,
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                            Text(
+                                                text = "Verified by SkillConnect",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = Color.White,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+                                } else {
+                                    Text(
+                                        text = "Badge Status: ${profile?.verificationBadgeLabel ?: "Verification Not Submitted"}",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = SkillWarningAmber
+                                    )
+                                }
+                            }
                         }
                         Button(
                             onClick = onAddNewService,

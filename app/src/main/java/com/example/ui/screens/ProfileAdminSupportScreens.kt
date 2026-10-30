@@ -30,11 +30,14 @@ import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Payment
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.filled.VerifiedUser
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.WorkspacePremium
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -72,6 +75,7 @@ import com.example.data.local.UserPreferences
 import com.example.data.model.AdminAccount
 import com.example.data.model.AdminAuditLog
 import com.example.data.model.BookingRequest
+import com.example.data.model.ChatMessage
 import com.example.data.model.Conversation
 import com.example.data.model.JobOpportunityItem
 import com.example.data.model.MarketplaceCatalog
@@ -211,12 +215,45 @@ fun ProfileAndSettingsScreen(
                         }
                     }
 
-                    Text(
-                        text = displayName.ifBlank { "SkillConnect Member" },
-                        style = MaterialTheme.typography.headlineSmall,
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = displayName.ifBlank { "SkillConnect Member" },
+                            style = MaterialTheme.typography.headlineSmall,
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold
+                        )
+                        if (lockedRole == "provider" && baseProfile.isStrictVerifiedBadgeActive) {
+                            Surface(
+                                color = SkillBlue.copy(alpha = 0.28f),
+                                shape = RoundedCornerShape(50),
+                                modifier = Modifier
+                                    .border(1.dp, SkillCyan, RoundedCornerShape(50))
+                                    .testTag("profile_header_blue_tick_badge")
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Verified,
+                                        contentDescription = "Blue Tick Verified by SkillConnect",
+                                        tint = SkillCyan,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Text(
+                                        text = "Verified by SkillConnect",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+                    }
                     Text(
                         text = "Email: $userEmail • City: $city ($locality)",
                         style = MaterialTheme.typography.labelSmall,
@@ -453,16 +490,29 @@ fun ProfileAndSettingsScreen(
                             color = SkillBlue
                         )
                         Surface(
-                            color = if (baseProfile.isStrictVerifiedBadgeActive) SkillSuccessGreen.copy(alpha = 0.16f) else SkillWarningAmber.copy(alpha = 0.16f),
+                            color = if (baseProfile.isStrictVerifiedBadgeActive) SkillBlue.copy(alpha = 0.16f) else SkillWarningAmber.copy(alpha = 0.16f),
                             shape = RoundedCornerShape(50)
                         ) {
-                            Text(
-                                text = baseProfile.verificationBadgeLabel,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = if (baseProfile.isStrictVerifiedBadgeActive) SkillSuccessGreen else SkillWarningAmber,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                            )
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                if (baseProfile.isStrictVerifiedBadgeActive) {
+                                    Icon(
+                                        imageVector = Icons.Default.Verified,
+                                        contentDescription = "Blue Tick Verified by SkillConnect",
+                                        tint = SkillBlue,
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                }
+                                Text(
+                                    text = baseProfile.verificationBadgeLabel,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (baseProfile.isStrictVerifiedBadgeActive) SkillBlue else SkillWarningAmber,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                         }
                     }
 
@@ -609,7 +659,7 @@ fun ProfileAndSettingsScreen(
         }
 
         // =========================================================================
-        // SECTION 4 OF 9: 4. Chat and messages
+        // SECTION 4 OF 9: 4. Booking Notices & Self Login Status (Admin Read/Delete for Messages)
         // =========================================================================
         item {
             Surface(
@@ -622,28 +672,43 @@ fun ProfileAndSettingsScreen(
             ) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
-                        text = "4. Chat and messages",
+                        text = if (isAdminUser) {
+                            "4. Admin Messages & Notices (Read & Delete Enabled)"
+                        } else {
+                            "4. My Booking Notices & Self Login Status"
+                        },
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = SkillBlue
                     )
-                    val unreadThreads = myConversations.count { it.unreadCustomerCount > 0 || it.unreadProviderCount > 0 }
                     Text(
-                        text = "Active Conversations: ${myConversations.size} • Unread Threads: $unreadThreads",
+                        text = "My Self Login Status (Private to You): Signed in as ${displayName.ifBlank { "Member" }} (${baseProfile.effectivePlatformId}) • Role: ${lockedRole.uppercase()}",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = SkillSuccessGreen,
+                        fontWeight = FontWeight.SemiBold
                     )
-                    myConversations.take(2).forEach { conv ->
+                    if (isAdminUser) {
+                        val unreadThreads = myConversations.count { it.unreadCustomerCount > 0 || it.unreadProviderCount > 0 }
                         Text(
-                            text = "• ${conv.customerName} ↔ ${conv.providerName}: ${conv.lastMessage.ifBlank { "No messages yet" }}",
-                            style = MaterialTheme.typography.bodySmall
+                            text = "Admin Message Governance: Only Admins can read and delete platform messages. Active Threads: ${myConversations.size} (Unread: $unreadThreads)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        Text(
+                            text = "Personal Booking Notices: ${myBookings.size} Booking Updates • Only your own booking notices and self login status are shown here. Reading & deleting messages is restricted to Administration.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                     OutlinedButton(
                         onClick = { onNavigate(AppDestination.MESSAGES) },
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("Open Real-Time Chat & Messages")
+                        Text(
+                            if (isAdminUser) "Open Admin Messages & Notices Console"
+                            else "Open My Booking & Self Login Notices"
+                        )
                     }
                 }
             }
@@ -837,7 +902,19 @@ fun ProfileAndSettingsScreen(
                                 "ceo" -> "CEO"
                                 else -> "FOUNDER"
                             }
-                            Text(roleTitle, style = MaterialTheme.typography.labelMedium, color = SkillPurple, fontWeight = FontWeight.Bold)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(roleTitle, style = MaterialTheme.typography.labelMedium, color = SkillPurple, fontWeight = FontWeight.Bold)
+                                Text(
+                                    text = "Strict 3-Attempt Limit (60s Lockout)",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = SkillWarningAmber,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                             OutlinedTextField(
                                 value = adminUsernameInput,
                                 onValueChange = { adminUsernameInput = it },
@@ -848,7 +925,7 @@ fun ProfileAndSettingsScreen(
                             OutlinedTextField(
                                 value = adminPasswordInput,
                                 onValueChange = { adminPasswordInput = it },
-                                label = { Text("Executive Password") },
+                                label = { Text("Executive Password (Max 3 Attempts)") },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth()
                             )
@@ -863,7 +940,7 @@ fun ProfileAndSettingsScreen(
                                 colors = ButtonDefaults.buttonColors(containerColor = SkillPurple),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Text("Verify & Open Executive Dashboard")
+                                Text("Verify & Open Executive Dashboard (Max 3 Attempts)")
                             }
                         }
                     }
@@ -2028,6 +2105,8 @@ fun AdminDashboardScreen(
     allVerifications: List<VerificationSubmission> = emptyList(),
     allBookings: List<BookingRequest> = emptyList(),
     allPayments: List<PaymentRecord> = emptyList(),
+    allConversations: List<Conversation> = emptyList(),
+    allMessages: List<ChatMessage> = emptyList(),
     reviews: List<ServiceReview>,
     reports: List<SafetyReport>,
     supportTickets: List<SupportTicket> = emptyList(),
@@ -2052,6 +2131,8 @@ fun AdminDashboardScreen(
     onResolveSafetyReport: (reportId: String, status: String, note: String) -> Unit = { _, _, _ -> },
     onRespondSupportTicket: (ticket: SupportTicket, status: String, responseNote: String, approveRoleChangeTo: String?) -> Unit = { _, _, _, _ -> },
     onHandleDispute: (dispute: PaymentDispute, newStatus: String, assignedRole: String, decisionNote: String) -> Unit = { _, _, _, _ -> },
+    onDeleteMessage: (messageId: String) -> Unit = {},
+    onDeleteConversation: (conversationId: String) -> Unit = {},
     onLoginExecutiveAdmin: (role: String, username: String, password: String) -> Unit = { _, _, _ -> },
     onLogoutExecutiveAdmin: () -> Unit = {},
     onChangeAdminPassword: (currentPassword: String, newPassword: String) -> Unit = { _, _ -> },
@@ -2067,11 +2148,18 @@ fun AdminDashboardScreen(
 
     var showChangePasswordDialog by remember { mutableStateOf(false) }
     var showSwitchRoleDialog by remember { mutableStateOf(false) }
+    var selectedInspectUser by remember { mutableStateOf<UserProfile?>(null) }
 
     if (!isAdminUser && effectiveRole.isBlank()) {
         var selectedCardRole by remember { mutableStateOf<String?>(null) }
         var usernameInput by remember { mutableStateOf("") }
         var passwordInput by remember { mutableStateOf("") }
+        var gateAttemptsUsed by remember { mutableStateOf(0) }
+        var gateLockedUntilMs by remember { mutableStateOf(0L) }
+        val nowMs = System.currentTimeMillis()
+        val isGateLocked = gateLockedUntilMs > nowMs
+        val attemptsLeft = (3 - gateAttemptsUsed).coerceAtLeast(0)
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -2083,9 +2171,10 @@ fun AdminDashboardScreen(
             Icon(Icons.Default.Security, contentDescription = null, tint = SkillErrorRed, modifier = Modifier.size(48.dp))
             Text("Executive Administrative Portal", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
             Text(
-                "Select one of the three administrative login cards below to authenticate your executive session.",
+                "Strict 3-Attempt Security Policy: Only 3 login attempts are permitted before a 60-second lockout.",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = SkillWarningAmber,
+                fontWeight = FontWeight.SemiBold
             )
             listOf(
                 Triple("cofounder", "CO-FOUNDER", "Verification queue, document review & routine support"),
@@ -2104,7 +2193,19 @@ fun AdminDashboardScreen(
                         }
                 ) {
                     Column(modifier = Modifier.padding(14.dp)) {
-                        Text(title, fontWeight = FontWeight.Bold, color = SkillBlue)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(title, fontWeight = FontWeight.Bold, color = SkillBlue)
+                            Text(
+                                text = if (isGateLocked) "LOCKED (0/3 left)" else "Attempts left: $attemptsLeft/3",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (isGateLocked) SkillErrorRed else SkillWarningAmber,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                         Text(desc, style = MaterialTheme.typography.bodySmall)
                     }
                 }
@@ -2115,21 +2216,36 @@ fun AdminDashboardScreen(
                     onValueChange = { usernameInput = it },
                     label = { Text("Executive Username") },
                     singleLine = true,
+                    enabled = !isGateLocked,
                     modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(
                     value = passwordInput,
                     onValueChange = { passwordInput = it },
-                    label = { Text("Executive Password") },
+                    label = { Text("Executive Password (Max 3 Attempts)") },
                     singleLine = true,
+                    enabled = !isGateLocked,
                     modifier = Modifier.fillMaxWidth()
                 )
                 Button(
-                    onClick = { onLoginExecutiveAdmin(selectedCardRole!!, usernameInput, passwordInput) },
+                    onClick = {
+                        val currentNow = System.currentTimeMillis()
+                        if (gateLockedUntilMs > currentNow) return@Button
+                        val nextCount = gateAttemptsUsed + 1
+                        gateAttemptsUsed = nextCount
+                        if (nextCount >= 3) {
+                            gateLockedUntilMs = currentNow + 60_000L
+                        }
+                        onLoginExecutiveAdmin(selectedCardRole!!, usernameInput, passwordInput)
+                    },
+                    enabled = !isGateLocked,
                     colors = ButtonDefaults.buttonColors(containerColor = SkillBlue),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("Sign In to ${selectedCardRole!!.uppercase()} Dashboard")
+                    Text(
+                        if (isGateLocked) "Locked for 60s (3/3 Attempts Used)"
+                        else "Sign In to ${selectedCardRole!!.uppercase()} Dashboard ($attemptsLeft/3 left)"
+                    )
                 }
             }
         }
@@ -2187,6 +2303,7 @@ fun AdminDashboardScreen(
             add("executive_admins" to "18. Founder Admin Manager (${allAdmins.size})")
         }
         add("audit_logs" to "19. Audit Logs (${auditLogs.size})")
+        add("messages" to "20. Messages — Admin Read & Delete (${allMessages.size})")
     }
 
     val roleDisplayBadge = when (effectiveRole) {
@@ -2615,15 +2732,96 @@ fun AdminDashboardScreen(
                 }
 
                 items(targetList, key = { it.userId.ifBlank { it.id } }) { usr ->
+                    val isProvider = usr.role == "provider"
+                    val isBlueTickActive = usr.isStrictVerifiedBadgeActive
                     Surface(
                         color = MaterialTheme.colorScheme.surface,
                         shape = RoundedCornerShape(14.dp),
                         modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(14.dp))
                     ) {
-                        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text("${usr.displayName} • ${usr.effectivePlatformId}", fontWeight = FontWeight.Bold)
-                            Text("Role: ${usr.role.uppercase()} • City: ${usr.city} • Account Status: ${usr.accountStatus.uppercase()}", style = MaterialTheme.typography.bodySmall)
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text("${usr.displayName} • ${usr.effectivePlatformId}", fontWeight = FontWeight.Bold)
+                                    if (isProvider && isBlueTickActive) {
+                                        Icon(
+                                            imageVector = Icons.Default.Verified,
+                                            contentDescription = "Blue Tick Verified by SkillConnect",
+                                            tint = SkillBlue,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                                if (isProvider) {
+                                    Surface(
+                                        color = if (isBlueTickActive) SkillBlue.copy(alpha = 0.14f) else SkillWarningAmber.copy(alpha = 0.14f),
+                                        shape = RoundedCornerShape(50)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            if (isBlueTickActive) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Verified,
+                                                    contentDescription = "Blue Tick",
+                                                    tint = SkillBlue,
+                                                    modifier = Modifier.size(14.dp)
+                                                )
+                                            }
+                                            Text(
+                                                text = usr.verificationBadgeLabel,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = if (isBlueTickActive) SkillBlue else SkillWarningAmber,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                            Text(
+                                text = "Role: ${usr.role.uppercase()} • City: ${usr.city} (${usr.locality.ifBlank { "All Areas" }}) • Account Status: ${usr.accountStatus.uppercase()}",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Button(
+                                    onClick = { selectedInspectUser = usr },
+                                    colors = ButtonDefaults.buttonColors(containerColor = SkillNavy),
+                                    modifier = Modifier.testTag("admin_view_full_details_${usr.userId}")
+                                ) {
+                                    Icon(Icons.Default.Visibility, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("View Full Details")
+                                }
+                                if (isProvider) {
+                                    Button(
+                                        onClick = {
+                                            onVerificationDecision(
+                                                usr.userId,
+                                                "approve",
+                                                "Approved by ${effectiveRole.uppercase()} — Blue Tick Verified by SkillConnect"
+                                            )
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = SkillBlue),
+                                        modifier = Modifier.testTag("admin_approve_blue_tick_${usr.userId}")
+                                    ) {
+                                        Icon(Icons.Default.Verified, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(if (isBlueTickActive) "Blue Tick Active (Verified)" else "Approve Profile (Blue Tick)")
+                                    }
+                                }
                                 if (usr.accountStatus != "suspended") {
                                     OutlinedButton(onClick = { onSetUserAccountStatus(usr.userId, "suspended", "Suspended by ${effectiveRole.uppercase()}") }) {
                                         Text("Suspend Account", color = SkillErrorRed)
@@ -2653,6 +2851,7 @@ fun AdminDashboardScreen(
                     )
                 }
                 items(providersList, key = { "vq_${it.userId}" }) { prov ->
+                    val isBlueTickActive = prov.isStrictVerifiedBadgeActive
                     Surface(
                         color = MaterialTheme.colorScheme.surface,
                         shape = RoundedCornerShape(14.dp),
@@ -2661,11 +2860,57 @@ fun AdminDashboardScreen(
                             .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(14.dp))
                     ) {
                         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("${prov.displayName} (${prov.effectivePlatformId}) • ${prov.city}", fontWeight = FontWeight.Bold)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text("${prov.displayName} (${prov.effectivePlatformId}) • ${prov.city}", fontWeight = FontWeight.Bold)
+                                    if (isBlueTickActive) {
+                                        Icon(
+                                            imageVector = Icons.Default.Verified,
+                                            contentDescription = "Blue Tick Verified by SkillConnect",
+                                            tint = SkillBlue,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                                Surface(
+                                    color = if (isBlueTickActive) SkillBlue.copy(alpha = 0.14f) else SkillWarningAmber.copy(alpha = 0.14f),
+                                    shape = RoundedCornerShape(50)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        if (isBlueTickActive) {
+                                            Icon(
+                                                imageVector = Icons.Default.Verified,
+                                                contentDescription = "Blue Tick",
+                                                tint = SkillBlue,
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                        }
+                                        Text(
+                                            text = prov.verificationBadgeLabel,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = if (isBlueTickActive) SkillBlue else SkillWarningAmber,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            }
                             Text(
                                 text = "Current Badge Status: ${prov.verificationBadgeLabel} • Account: ${prov.accountStatus.uppercase()}",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = if (prov.isStrictVerifiedBadgeActive) SkillSuccessGreen else SkillWarningAmber
+                                color = if (isBlueTickActive) SkillBlue else SkillWarningAmber,
+                                fontWeight = FontWeight.SemiBold
                             )
                             FlowRow(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -2673,9 +2918,21 @@ fun AdminDashboardScreen(
                             ) {
                                 Button(
                                     onClick = { onVerificationDecision(prov.userId, "approve", decisionReasonInput) },
-                                    colors = ButtonDefaults.buttonColors(containerColor = SkillSuccessGreen)
+                                    colors = ButtonDefaults.buttonColors(containerColor = SkillBlue),
+                                    modifier = Modifier.testTag("vq_approve_blue_tick_${prov.userId}")
                                 ) {
-                                    Text("Approve")
+                                    Icon(Icons.Default.Verified, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Approve Profile (Blue Tick)")
+                                }
+                                Button(
+                                    onClick = { selectedInspectUser = prov },
+                                    colors = ButtonDefaults.buttonColors(containerColor = SkillNavy),
+                                    modifier = Modifier.testTag("vq_view_full_details_${prov.userId}")
+                                ) {
+                                    Icon(Icons.Default.Visibility, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("View Full Details")
                                 }
                                 OutlinedButton(
                                     onClick = { onVerificationDecision(prov.userId, "reject", decisionReasonInput) }
@@ -2989,7 +3246,250 @@ fun AdminDashboardScreen(
                     }
                 }
             }
+
+            "messages" -> {
+                item {
+                    Surface(
+                        color = SkillBlue.copy(alpha = 0.08f),
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(1.dp, SkillBlue.copy(alpha = 0.35f), RoundedCornerShape(14.dp))
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(
+                                text = "Admin Exclusive Message Governance (Read & Delete)",
+                                fontWeight = FontWeight.Bold,
+                                color = SkillBlue
+                            )
+                            Text(
+                                text = "Only Administrators can read and delete platform messages and conversations. Customers and Service Providers only see their own Booking Notices and Self Login Status.",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    }
+                }
+
+                if (allConversations.isNotEmpty()) {
+                    item {
+                        Text(
+                            text = "All Conversations (${allConversations.size})",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    items(allConversations, key = { "adm_conv_${it.id}" }) { conv ->
+                        Surface(
+                            color = MaterialTheme.colorScheme.surface,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(12.dp))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("${conv.customerName} ↔ ${conv.providerName}", fontWeight = FontWeight.Bold)
+                                    Text(
+                                        text = "Service: ${conv.serviceTitle.ifBlank { "General" }} • Last: ${conv.lastMessage.ifBlank { "No messages" }}",
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                }
+                                OutlinedButton(
+                                    onClick = { onDeleteConversation(conv.id) },
+                                    modifier = Modifier.testTag("admin_portal_delete_conv_${conv.id}")
+                                ) {
+                                    Icon(Icons.Default.Delete, contentDescription = null, tint = SkillErrorRed, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Delete Thread", color = SkillErrorRed)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                item {
+                    Text(
+                        text = "All Platform Messages (${allMessages.size})",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                if (allMessages.isEmpty()) {
+                    item {
+                        Text("No messages recorded in Firestore.", style = MaterialTheme.typography.bodySmall)
+                    }
+                } else {
+                    items(allMessages, key = { "adm_msg_${it.id}" }) { msg ->
+                        Surface(
+                            color = MaterialTheme.colorScheme.surface,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(12.dp))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "${msg.senderName} (${msg.senderId}) • Thread: ${msg.conversationId}",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = SkillBlue
+                                    )
+                                    Text(msg.text, style = MaterialTheme.typography.bodyMedium)
+                                }
+                                OutlinedButton(
+                                    onClick = { onDeleteMessage(msg.id) },
+                                    modifier = Modifier.testTag("admin_portal_delete_msg_${msg.id}")
+                                ) {
+                                    Icon(Icons.Default.Delete, contentDescription = null, tint = SkillErrorRed, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Delete", color = SkillErrorRed)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
+    }
+
+    if (selectedInspectUser != null) {
+        val inspectUser = selectedInspectUser!!
+        val userVerification = allVerifications.firstOrNull { it.userId == inspectUser.userId }
+        val userBookings = allBookings.filter { it.customerId == inspectUser.userId || it.providerId == inspectUser.userId }
+        val userPayments = allPayments.filter { it.userId == inspectUser.userId }
+        val userServices = allServices.filter { it.providerId == inspectUser.userId }
+        val isBlueTick = inspectUser.isStrictVerifiedBadgeActive
+
+        AlertDialog(
+            onDismissRequest = { selectedInspectUser = null },
+            title = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "Full User Details: ${inspectUser.displayName}",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    if (inspectUser.role == "provider" && isBlueTick) {
+                        Icon(
+                            imageVector = Icons.Default.Verified,
+                            contentDescription = "Blue Tick Verified by SkillConnect",
+                            tint = SkillBlue,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+            },
+            text = {
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(420.dp)
+                        .testTag("admin_full_user_details_dialog")
+                ) {
+                    item {
+                        Surface(
+                            color = if (isBlueTick) SkillBlue.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceVariant,
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(
+                                    text = "Platform ID: ${inspectUser.effectivePlatformId}",
+                                    fontWeight = FontWeight.Bold,
+                                    color = SkillBlue
+                                )
+                                Text("Firebase UID: ${inspectUser.userId}", style = MaterialTheme.typography.bodySmall)
+                                Text("Role: ${inspectUser.role.uppercase()} • Account Status: ${inspectUser.accountStatus.uppercase()}", style = MaterialTheme.typography.bodySmall)
+                                Text(
+                                    text = "Verification Badge: ${inspectUser.verificationBadgeLabel} (${inspectUser.verificationStatus.uppercase()})",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (isBlueTick) SkillBlue else SkillWarningAmber,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                    item {
+                        Text("Location & Contact Details", fontWeight = FontWeight.Bold, color = SkillBlue)
+                        Text("State / City / Locality: ${inspectUser.serviceState.ifBlank { "India" }} • ${inspectUser.city} • ${inspectUser.locality.ifBlank { "All Areas" }}", style = MaterialTheme.typography.bodySmall)
+                        Text("Public Phone: ${inspectUser.publicPhone.ifBlank { "Not Shared / Private" }}", style = MaterialTheme.typography.bodySmall)
+                        Text("Preferred Language: ${inspectUser.preferredLanguage.uppercase()} • Subscription Plan: ${inspectUser.subscriptionPlan.uppercase()}", style = MaterialTheme.typography.bodySmall)
+                    }
+                    if (inspectUser.role == "provider") {
+                        item {
+                            HorizontalDivider()
+                            Text("Service Provider Professional Details", fontWeight = FontWeight.Bold, color = SkillBlue)
+                            Text("Business Name: ${inspectUser.businessName.ifBlank { userVerification?.businessName ?: "Individual Professional" }}", style = MaterialTheme.typography.bodySmall)
+                            Text("Headline: ${inspectUser.headline.ifBlank { "N/A" }}", style = MaterialTheme.typography.bodySmall)
+                            Text("Bio / Portfolio: ${inspectUser.bio.ifBlank { userVerification?.portfolioSummary ?: "N/A" }}", style = MaterialTheme.typography.bodySmall)
+                            Text("Primary Category: ${inspectUser.primaryCategory.ifBlank { "General" }} • Experience: ${inspectUser.experienceYears} yrs", style = MaterialTheme.typography.bodySmall)
+                            Text("Skills: ${inspectUser.skills.joinToString(", ").ifBlank { "None listed" }}", style = MaterialTheme.typography.bodySmall)
+                            Text("Starting Price: ₹${inspectUser.startingPrice} • Availability: ${inspectUser.availability.ifBlank { "Flexible" }}", style = MaterialTheme.typography.bodySmall)
+                            Text("Completed Jobs: ${inspectUser.completedJobsCount} • Rating: ${inspectUser.averageRating} (${inspectUser.reviewCount} reviews)", style = MaterialTheme.typography.bodySmall)
+                            if (userVerification != null) {
+                                Text("Submitted KYC Document Note: ${userVerification.documentReferenceNote}", style = MaterialTheme.typography.bodySmall, color = SkillPurple)
+                            }
+                        }
+                    }
+                    item {
+                        HorizontalDivider()
+                        Text(
+                            text = "Platform Activity Summary",
+                            fontWeight = FontWeight.Bold,
+                            color = SkillBlue
+                        )
+                        Text(
+                            text = "• Published Services: ${userServices.size}\n" +
+                                "• Bookings Involved: ${userBookings.size}\n" +
+                                "• Payments / Transactions: ${userPayments.size}",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (inspectUser.role == "provider") {
+                        Button(
+                            onClick = {
+                                onVerificationDecision(
+                                    inspectUser.userId,
+                                    "approve",
+                                    "Approved by ${effectiveRole.uppercase()} — Blue Tick Verified by SkillConnect"
+                                )
+                                selectedInspectUser = inspectUser.copy(
+                                    isVerified = true,
+                                    verificationStatus = "approved",
+                                    accountStatus = "active"
+                                )
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = SkillBlue)
+                        ) {
+                            Icon(Icons.Default.Verified, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(if (isBlueTick) "Verified by SkillConnect ✓" else "Approve (Blue Tick)")
+                        }
+                    }
+                    TextButton(onClick = { selectedInspectUser = null }) {
+                        Text("Close")
+                    }
+                }
+            }
+        )
     }
 
     if (showChangePasswordDialog) {
