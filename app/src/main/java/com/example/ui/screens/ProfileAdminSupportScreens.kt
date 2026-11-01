@@ -70,6 +70,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.data.local.UserPreferences
 import com.example.data.model.AdminAccount
@@ -163,9 +164,8 @@ fun ProfileAndSettingsScreen(
     var showLogoutConfirmDialog by remember { mutableStateOf(false) }
     var disputeBookingTarget by remember { mutableStateOf<BookingRequest?>(null) }
 
-    // Executive Admin Portal Card state inside Profile
-    var selectedAdminCardRole by remember { mutableStateOf<String?>(null) }
-    var adminUsernameInput by remember { mutableStateOf("") }
+    // Unified Admin Gmail Portal state inside Profile
+    var showUnifiedAdminInput by remember { mutableStateOf(false) }
     var adminPasswordInput by remember { mutableStateOf("") }
 
     LazyColumn(
@@ -850,12 +850,12 @@ fun ProfileAndSettingsScreen(
 
                     HorizontalDivider()
 
-                    // Executive Admin Portal Quick Access (Co-Founder, CEO, Founder)
+                    // Unified Admin Gmail Portal Quick Access (Founder, Co-Founder, CEO)
                     Text(
                         text = if (activeExecutiveRole.isNotBlank()) {
                             "Active Executive Admin Session: ${activeExecutiveRole.uppercase()} (${myAdminAccount?.canonicalAccountId ?: preferences.activeAdminCanonicalId})"
                         } else {
-                            "Executive Admin Portal (Co-Founder • CEO • Founder)"
+                            "Unified Admin Gmail Portal (Founder • Co-Founder • CEO)"
                         },
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold
@@ -868,46 +868,52 @@ fun ProfileAndSettingsScreen(
                                 colors = ButtonDefaults.buttonColors(containerColor = SkillSuccessGreen),
                                 modifier = Modifier.weight(1f)
                             ) {
-                                Text("Open ${activeExecutiveRole.uppercase()} Console")
+                                Text(
+                                    text = "Open ${activeExecutiveRole.uppercase()} Console",
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Ellipsis
+                                )
                             }
                             OutlinedButton(
                                 onClick = onLogoutExecutiveAdmin,
                                 modifier = Modifier.weight(1f)
                             ) {
-                                Text("End Admin Session")
-                            }
-                        }
-                    } else {
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            listOf(
-                                "cofounder" to "CO-FOUNDER",
-                                "ceo" to "CEO",
-                                "founder" to "FOUNDER"
-                            ).forEach { (rKey, rLabel) ->
-                                FilterChip(
-                                    selected = selectedAdminCardRole == rKey,
-                                    onClick = {
-                                        selectedAdminCardRole = if (selectedAdminCardRole == rKey) null else rKey
-                                        adminUsernameInput = ""
-                                        adminPasswordInput = ""
-                                    },
-                                    label = { Text(rLabel) }
+                                Text(
+                                    text = "End Admin Session",
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
                         }
-
-                        if (selectedAdminCardRole != null) {
-                            val roleTitle = when (selectedAdminCardRole) {
-                                "cofounder" -> "CO-FOUNDER"
-                                "ceo" -> "CEO"
-                                else -> "FOUNDER"
+                    } else {
+                        Text(
+                            text = "Your administrative role (FOUNDER, CO-FOUNDER, or CEO) is automatically assigned by your authenticated Google email. Unauthorized Gmail accounts are rejected.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        if (!showUnifiedAdminInput) {
+                            OutlinedButton(
+                                onClick = {
+                                    showUnifiedAdminInput = true
+                                    adminPasswordInput = ""
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = "Open Unified Admin Gmail Login",
+                                    maxLines = 1,
+                                    softWrap = false
+                                )
                             }
+                        } else {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text(roleTitle, style = MaterialTheme.typography.labelMedium, color = SkillPurple, fontWeight = FontWeight.Bold)
+                                Text("Unified Admin Gmail Auth", style = MaterialTheme.typography.labelMedium, color = SkillPurple, fontWeight = FontWeight.Bold)
                                 Text(
                                     text = "Strict 3-Attempt Limit (60s Lockout)",
                                     style = MaterialTheme.typography.labelSmall,
@@ -916,31 +922,39 @@ fun ProfileAndSettingsScreen(
                                 )
                             }
                             OutlinedTextField(
-                                value = adminUsernameInput,
-                                onValueChange = { adminUsernameInput = it },
-                                label = { Text("Executive Username") },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            OutlinedTextField(
                                 value = adminPasswordInput,
                                 onValueChange = { adminPasswordInput = it },
-                                label = { Text("Executive Password (Max 3 Attempts)") },
+                                label = { Text("Secondary Admin Password (Max 3 Attempts)") },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth()
                             )
-                            Button(
-                                onClick = {
-                                    onLoginExecutiveAdmin(
-                                        selectedAdminCardRole!!,
-                                        adminUsernameInput,
-                                        adminPasswordInput
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                Button(
+                                    onClick = {
+                                        onLoginExecutiveAdmin(
+                                            "",
+                                            "",
+                                            adminPasswordInput
+                                        )
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = SkillPurple),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text(
+                                        text = "Verify Admin Gmail & Open Console",
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        overflow = TextOverflow.Ellipsis
                                     )
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = SkillPurple),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text("Verify & Open Executive Dashboard (Max 3 Attempts)")
+                                }
+                                OutlinedButton(
+                                    onClick = {
+                                        showUnifiedAdminInput = false
+                                        adminPasswordInput = ""
+                                    }
+                                ) {
+                                    Text("Cancel", maxLines = 1, softWrap = false)
+                                }
                             }
                         }
                     }
@@ -2145,14 +2159,12 @@ fun AdminDashboardScreen(
     val isCoFounder = effectiveRole == "cofounder"
     val isCeo = effectiveRole == "ceo"
     val isFounder = effectiveRole == "founder"
+    val isFounderAccessGroup = isFounder || isCoFounder
 
     var showChangePasswordDialog by remember { mutableStateOf(false) }
-    var showSwitchRoleDialog by remember { mutableStateOf(false) }
     var selectedInspectUser by remember { mutableStateOf<UserProfile?>(null) }
 
     if (!isAdminUser && effectiveRole.isBlank()) {
-        var selectedCardRole by remember { mutableStateOf<String?>(null) }
-        var usernameInput by remember { mutableStateOf("") }
         var passwordInput by remember { mutableStateOf("") }
         var gateAttemptsUsed by remember { mutableStateOf(0) }
         var gateLockedUntilMs by remember { mutableStateOf(0L) }
@@ -2168,84 +2180,70 @@ fun AdminDashboardScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Icon(Icons.Default.Security, contentDescription = null, tint = SkillErrorRed, modifier = Modifier.size(48.dp))
-            Text("Executive Administrative Portal", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            Icon(Icons.Default.Security, contentDescription = null, tint = SkillPurple, modifier = Modifier.size(48.dp))
+            Text("Unified Admin Gmail Login Page", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
             Text(
-                "Strict 3-Attempt Security Policy: Only 3 login attempts are permitted before a 60-second lockout.",
+                "Strict 3-Attempt Security Policy: Only 3 login attempts are permitted before a 60-second lockout. Your administrative role (FOUNDER, CO-FOUNDER, or CEO) is automatically assigned by your authenticated Google email.",
                 style = MaterialTheme.typography.bodySmall,
                 color = SkillWarningAmber,
                 fontWeight = FontWeight.SemiBold
             )
-            listOf(
-                Triple("cofounder", "CO-FOUNDER", "Verification queue, document review & routine support"),
-                Triple("ceo", "CEO", "Analytics, escalations & refund approvals up to ₹10,000 INR"),
-                Triple("founder", "FOUNDER", "Highest authority, unlimited refunds & platform security")
-            ).forEach { (rKey, title, desc) ->
-                Surface(
-                    color = if (selectedCardRole == rKey) SkillBlue.copy(alpha = 0.1f) else MaterialTheme.colorScheme.surface,
-                    shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .border(if (selectedCardRole == rKey) 2.dp else 1.dp, if (selectedCardRole == rKey) SkillBlue else MaterialTheme.colorScheme.outline, RoundedCornerShape(14.dp))
-                        .clickable {
-                            selectedCardRole = rKey
-                            usernameInput = ""
-                        }
-                ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(title, fontWeight = FontWeight.Bold, color = SkillBlue)
-                            Text(
-                                text = if (isGateLocked) "LOCKED (0/3 left)" else "Attempts left: $attemptsLeft/3",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = if (isGateLocked) SkillErrorRed else SkillWarningAmber,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                        Text(desc, style = MaterialTheme.typography.bodySmall)
+            Surface(
+                color = SkillPurple.copy(alpha = 0.08f),
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.5.dp, SkillPurple, RoundedCornerShape(14.dp))
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Authorized Admin Gmail Verification", fontWeight = FontWeight.Bold, color = SkillPurple)
+                        Text(
+                            text = if (isGateLocked) "LOCKED (0/3 left)" else "Attempts left: $attemptsLeft/3",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (isGateLocked) SkillErrorRed else SkillWarningAmber,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
-                }
-            }
-            if (selectedCardRole != null) {
-                OutlinedTextField(
-                    value = usernameInput,
-                    onValueChange = { usernameInput = it },
-                    label = { Text("Executive Username") },
-                    singleLine = true,
-                    enabled = !isGateLocked,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
-                    value = passwordInput,
-                    onValueChange = { passwordInput = it },
-                    label = { Text("Executive Password (Max 3 Attempts)") },
-                    singleLine = true,
-                    enabled = !isGateLocked,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Button(
-                    onClick = {
-                        val currentNow = System.currentTimeMillis()
-                        if (gateLockedUntilMs > currentNow) return@Button
-                        val nextCount = gateAttemptsUsed + 1
-                        gateAttemptsUsed = nextCount
-                        if (nextCount >= 3) {
-                            gateLockedUntilMs = currentNow + 60_000L
-                        }
-                        onLoginExecutiveAdmin(selectedCardRole!!, usernameInput, passwordInput)
-                    },
-                    enabled = !isGateLocked,
-                    colors = ButtonDefaults.buttonColors(containerColor = SkillBlue),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
                     Text(
-                        if (isGateLocked) "Locked for 60s (3/3 Attempts Used)"
-                        else "Sign In to ${selectedCardRole!!.uppercase()} Dashboard ($attemptsLeft/3 left)"
+                        "• FOUNDER: Founder-level access, Founder identity & permissions.\n• CO-FOUNDER: Founder-level Admin Access Group with separate Co-Founder identity & role.\n• CEO: Separate CEO role & CEO-specific dashboard permissions.\n• All unauthorized Gmail accounts are immediately rejected.",
+                        style = MaterialTheme.typography.bodySmall
                     )
+                    OutlinedTextField(
+                        value = passwordInput,
+                        onValueChange = { passwordInput = it },
+                        label = { Text("Secondary Admin Password (Max 3 Attempts)") },
+                        singleLine = true,
+                        enabled = !isGateLocked,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Button(
+                        onClick = {
+                            val currentNow = System.currentTimeMillis()
+                            if (gateLockedUntilMs > currentNow) return@Button
+                            val nextCount = gateAttemptsUsed + 1
+                            gateAttemptsUsed = nextCount
+                            if (nextCount >= 3) {
+                                gateLockedUntilMs = currentNow + 60_000L
+                            }
+                            onLoginExecutiveAdmin("", "", passwordInput)
+                        },
+                        enabled = !isGateLocked,
+                        colors = ButtonDefaults.buttonColors(containerColor = SkillPurple),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = if (isGateLocked) "Locked for 60s (3/3 Attempts Used)"
+                            else "Verify Authorized Admin Gmail ($attemptsLeft/3 left)",
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
             }
         }
@@ -2253,13 +2251,7 @@ fun AdminDashboardScreen(
     }
 
     var activeSection by remember(effectiveRole) {
-        mutableStateOf(
-            when (effectiveRole) {
-                "cofounder" -> "verification_queue"
-                "ceo" -> "overview"
-                else -> "overview"
-            }
-        )
+        mutableStateOf("overview")
     }
     var userSearchQuery by remember { mutableStateOf("") }
     var decisionReasonInput by remember { mutableStateOf("Verified identity & portfolio details.") }
@@ -2292,7 +2284,7 @@ fun AdminDashboardScreen(
         add("categories" to "10. Categories (${MarketplaceCatalog.categories.size})")
         add("bookings" to "11. Bookings (${allBookings.size})")
         add("reviews" to "12. Reviews (${reviews.size})")
-        if (isCeo || isFounder) {
+        if (isCeo || isFounderAccessGroup) {
             add("payments" to "13. Payments & Refunds (${allPayments.size})")
             add("payouts" to "14. Provider Payouts")
             add("subscriptions" to "15. Subscriptions")
@@ -2307,9 +2299,14 @@ fun AdminDashboardScreen(
     }
 
     val roleDisplayBadge = when (effectiveRole) {
-        "cofounder" -> "CO-FOUNDER"
-        "ceo" -> "CEO"
-        else -> "FOUNDER"
+        "cofounder" -> "CO-FOUNDER (ADM-COF-001)"
+        "ceo" -> "CEO (ADM-CEO-001)"
+        else -> "FOUNDER (ADM-FND-001)"
+    }
+    val accessGroupBadge = when {
+        isFounder -> "Access Group: Founder-Level Admin Access (Founder Identity & Full Authority)"
+        isCoFounder -> "Access Group: Founder-Level Admin Access Group (Co-Founder Identity & Role)"
+        else -> "Access Group: CEO Role & CEO-Specific Dashboard Permissions"
     }
     val sessionPolicyBadge = if (isFounder) {
         "Session Policy: Persistent Executive Session (Founder 15-Min Timeout Exception Active)"
@@ -2340,13 +2337,17 @@ fun AdminDashboardScreen(
                         Surface(
                             color = when {
                                 isFounder -> SkillPurple
-                                isCeo -> SkillBlue
-                                else -> SkillCyan.copy(alpha = 0.25f)
+                                isCoFounder -> SkillCyan.copy(alpha = 0.35f)
+                                else -> SkillBlue
                             },
                             shape = RoundedCornerShape(50)
                         ) {
                             Text(
-                                text = effectiveRole.uppercase(),
+                                text = when {
+                                    isCoFounder -> "CO-FOUNDER"
+                                    isCeo -> "CEO"
+                                    else -> "FOUNDER"
+                                },
                                 style = MaterialTheme.typography.labelSmall,
                                 color = Color.White,
                                 fontWeight = FontWeight.Bold,
@@ -2362,6 +2363,12 @@ fun AdminDashboardScreen(
                         fontWeight = FontWeight.Bold
                     )
                     Text(
+                        text = accessGroupBadge,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = SkillSuccessGreen,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
                         text = sessionPolicyBadge,
                         style = MaterialTheme.typography.labelSmall,
                         color = SkillCyan,
@@ -2369,9 +2376,9 @@ fun AdminDashboardScreen(
                     )
                     Text(
                         text = when {
-                            isCoFounder -> "Scope: Profile & Document Verification, Support Tickets, Routine Moderation & Flagging Payment Disputes to CEO. (Direct refund execution & Founder controls restricted)"
-                            isCeo -> "Scope: Business Analytics, Bookings, Escalated Verifications, Operational Settings & Refund Approvals up to ₹10,000 INR. (Refunds > ₹10,000 INR escalate to Founder)"
-                            else -> "Scope: Highest Administrative Authority — Unlimited Refund Approvals, Executive Admin & Role Management, Commission Reports, Emergency Maintenance & Immutable Audit Logs."
+                            isCoFounder -> "Scope: Founder-Level Admin Access Group with separate Co-Founder identity — Full Verification, Bookings, Refunds, Platform Settings, Moderation & Audit Logs. (Authorized Admin Account updates remain exclusive to Founder)"
+                            isCeo -> "Scope: Separate CEO Role & CEO-Specific Dashboard Permissions — Business Analytics, Bookings, Verifications, Operational Settings & Refund Approvals up to ₹10,000 INR."
+                            else -> "Scope: Highest Founder Authority — Founder-Level Access, Exclusive Admin Account Governance, Unlimited Refund Approvals, Commission Reports, Emergency Maintenance & Immutable Audit Logs."
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = Color.White.copy(alpha = 0.85f)
@@ -2382,19 +2389,13 @@ fun AdminDashboardScreen(
                             onClick = { showChangePasswordDialog = true },
                             modifier = Modifier.testTag("admin_change_password_btn")
                         ) {
-                            Text("Change Password", color = Color.White, style = MaterialTheme.typography.labelSmall)
-                        }
-                        OutlinedButton(
-                            onClick = { showSwitchRoleDialog = true },
-                            modifier = Modifier.testTag("admin_switch_tier_btn")
-                        ) {
-                            Text("Switch Admin Tier", color = SkillCyan, style = MaterialTheme.typography.labelSmall)
+                            Text("Change Password", color = Color.White, style = MaterialTheme.typography.labelSmall, maxLines = 1, softWrap = false)
                         }
                         OutlinedButton(
                             onClick = onLogoutExecutiveAdmin,
                             modifier = Modifier.testTag("admin_logout_session_btn")
                         ) {
-                            Text("End Admin Session", color = SkillWarningAmber, style = MaterialTheme.typography.labelSmall)
+                            Text("End Admin Session", color = SkillWarningAmber, style = MaterialTheme.typography.labelSmall, maxLines = 1, softWrap = false)
                         }
                     }
 
@@ -2428,38 +2429,21 @@ fun AdminDashboardScreen(
                     }
                 }
 
-                if (isCoFounder) {
-                    item {
-                        Surface(
-                            color = SkillWarningAmber.copy(alpha = 0.14f),
-                            shape = RoundedCornerShape(14.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Text("Co-Founder Operational Summary", fontWeight = FontWeight.Bold)
-                                Text(
-                                    "Platform financial settings, direct refund execution, and emergency security controls are restricted to CEO / Founder roles. Use the Verification Queue, Support Tickets, and Payment Disputes tabs above.",
-                                    style = MaterialTheme.typography.bodySmall
-                                )
-                            }
-                        }
-                    }
-                } else {
-                    item {
-                        Surface(
-                            color = MaterialTheme.colorScheme.surface,
-                            shape = RoundedCornerShape(16.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(16.dp))
-                        ) {
-                            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                Text(
-                                    if (isFounder) "Founder Platform, Subscription & Emergency Maintenance Controls"
-                                    else "CEO Operational & Announcement Settings",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold
-                                )
+                item {
+                    Surface(
+                        color = MaterialTheme.colorScheme.surface,
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(16.dp))
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text(
+                                if (isFounderAccessGroup) "Founder-Level Admin Access Group: Platform, Subscription & Emergency Controls (${if (isCoFounder) "CO-FOUNDER" else "FOUNDER"})"
+                                else "CEO Operational & Announcement Settings",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
                                 OutlinedTextField(
                                     value = announcementText,
                                     onValueChange = { announcementText = it },
@@ -2509,7 +2493,6 @@ fun AdminDashboardScreen(
                             }
                         }
                     }
-                }
             }
 
             "disputes" -> {
@@ -2579,16 +2562,6 @@ fun AdminDashboardScreen(
                                 }
 
                                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    if (isCoFounder) {
-                                        Button(
-                                            onClick = {
-                                                onHandleDispute(disp, "escalated_to_ceo", "ceo", decisionNoteInput)
-                                            },
-                                            colors = ButtonDefaults.buttonColors(containerColor = SkillWarningAmber)
-                                        ) {
-                                            Text("Flag & Escalate to CEO")
-                                        }
-                                    }
                                     if (isCeo) {
                                         if (!overCeoCap) {
                                             Button(
@@ -2602,7 +2575,7 @@ fun AdminDashboardScreen(
                                         } else {
                                             Button(
                                                 onClick = {
-                                                    onHandleDispute(disp, "escalated_to_founder", "founder", "Escalated > ₹10,000 INR to Founder: $decisionNoteInput")
+                                                    onHandleDispute(disp, "escalated_to_founder", "founder", "Escalated > ₹10,000 INR to Founder Group: $decisionNoteInput")
                                                 },
                                                 colors = ButtonDefaults.buttonColors(containerColor = SkillPurple)
                                             ) {
@@ -2617,18 +2590,19 @@ fun AdminDashboardScreen(
                                             Text("Reject Dispute", color = SkillErrorRed)
                                         }
                                     }
-                                    if (isFounder) {
+                                    if (isFounderAccessGroup) {
+                                        val actorTitle = if (isCoFounder) "Co-Founder" else "Founder"
                                         Button(
                                             onClick = {
-                                                onHandleDispute(disp, "resolved_refunded", "founder", "Founder Unlimited Approval (₹${disp.disputedAmountInr}): $decisionNoteInput")
+                                                onHandleDispute(disp, "resolved_refunded", effectiveRole, "$actorTitle Unlimited Approval (₹${disp.disputedAmountInr}): $decisionNoteInput")
                                             },
                                             colors = ButtonDefaults.buttonColors(containerColor = SkillSuccessGreen)
                                         ) {
-                                            Text("Founder Approve Refund (₹${disp.disputedAmountInr})")
+                                            Text("$actorTitle Approve Refund (₹${disp.disputedAmountInr})")
                                         }
                                         OutlinedButton(
                                             onClick = {
-                                                onHandleDispute(disp, "resolved_rejected", "founder", decisionNoteInput)
+                                                onHandleDispute(disp, "resolved_rejected", effectiveRole, decisionNoteInput)
                                             }
                                         ) {
                                             Text("Reject Dispute", color = SkillErrorRed)
@@ -3076,108 +3050,99 @@ fun AdminDashboardScreen(
             }
 
             "payments", "payouts" -> {
-                if (isCoFounder) {
-                    item {
-                        Text(
-                            "Payment credentials, Direct UPI subscription approval, and direct refund execution are restricted to CEO (<= ₹10,000 INR) and Founder (Unlimited). Co-Founder may flag disputes in the Payment Disputes tab.",
-                            color = SkillErrorRed
-                        )
+                item {
+                    Surface(
+                        color = MaterialTheme.colorScheme.surface,
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(1.dp, SkillPurple, RoundedCornerShape(14.dp))
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                "Founder / Co-Founder / CEO Direct UPI Subscription Verification",
+                                fontWeight = FontWeight.Bold,
+                                color = SkillPurple
+                            )
+                            Text(
+                                "Verify the user's submitted 12-digit UTR, amount, and date against the merchant bank/UPI statement before approving. Approving marks the payment SUCCEEDED and activates subscriptionPlan = 'premium'.",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            OutlinedTextField(
+                                value = subscriptionVerificationNote,
+                                onValueChange = { subscriptionVerificationNote = it },
+                                label = { Text("Merchant Statement Verification Note (min 8 chars) *") },
+                                singleLine = true,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("admin_subscription_verification_note_input")
+                            )
+                        }
                     }
+                }
+
+                val filteredPayments = if (activeSection == "payouts") {
+                    allPayments.filter { it.paymentType == "payout" || it.status == "pending" }
                 } else {
-                    item {
+                    allPayments
+                }
+                if (filteredPayments.isEmpty()) {
+                    item { Text("No payment or payout records in this view yet.") }
+                } else {
+                    items(filteredPayments, key = { it.id }) { pay ->
+                        val exceedsCeoThreshold = pay.amountInr > 10000L
                         Surface(
                             color = MaterialTheme.colorScheme.surface,
                             shape = RoundedCornerShape(14.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .border(1.dp, SkillPurple, RoundedCornerShape(14.dp))
+                            modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(14.dp))
                         ) {
-                            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text(
-                                    "CEO / Founder Direct UPI Subscription Verification",
-                                    fontWeight = FontWeight.Bold,
-                                    color = SkillPurple
-                                )
-                                Text(
-                                    "Verify the user's submitted 12-digit UTR, amount, and date against the merchant bank/UPI statement before approving. Approving marks the payment SUCCEEDED and activates subscriptionPlan = 'premium'.",
-                                    style = MaterialTheme.typography.bodySmall
-                                )
-                                OutlinedTextField(
-                                    value = subscriptionVerificationNote,
-                                    onValueChange = { subscriptionVerificationNote = it },
-                                    label = { Text("Merchant Statement Verification Note (min 8 chars) *") },
-                                    singleLine = true,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .testTag("admin_subscription_verification_note_input")
-                                )
-                            }
-                        }
-                    }
-
-                    val filteredPayments = if (activeSection == "payouts") {
-                        allPayments.filter { it.paymentType == "payout" || it.status == "pending" }
-                    } else {
-                        allPayments
-                    }
-                    if (filteredPayments.isEmpty()) {
-                        item { Text("No payment or payout records in this view yet.") }
-                    } else {
-                        items(filteredPayments, key = { it.id }) { pay ->
-                            val exceedsCeoThreshold = pay.amountInr > 10000L
-                            Surface(
-                                color = MaterialTheme.colorScheme.surface,
-                                shape = RoundedCornerShape(14.dp),
-                                modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(14.dp))
-                            ) {
-                                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    Text("${pay.notes.ifBlank { pay.paymentType }} (${pay.transactionRef})", fontWeight = FontWeight.Bold)
-                                    Text("Type: ${pay.paymentType.uppercase()} • Method: ${pay.method.uppercase()} • Amount: ₹${pay.amountInr} • User: ${pay.userId}", style = MaterialTheme.typography.bodySmall)
-                                    Text("Status: ${pay.status.uppercase()} • Key: ${pay.id}", style = MaterialTheme.typography.labelSmall, color = SkillBlue)
-                                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                        if (pay.paymentType == "subscription" && pay.status == "pending" && (isCeo || isFounder)) {
-                                            Button(
-                                                onClick = {
-                                                    onReviewSubscriptionPayment(pay, true, subscriptionVerificationNote)
-                                                },
-                                                colors = ButtonDefaults.buttonColors(containerColor = SkillSuccessGreen),
-                                                modifier = Modifier.testTag("approve_subscription_payment_${pay.id}")
-                                            ) {
-                                                Text("Approve & Activate Premium")
-                                            }
-                                            OutlinedButton(
-                                                onClick = {
-                                                    onReviewSubscriptionPayment(pay, false, subscriptionVerificationNote)
-                                                },
-                                                modifier = Modifier.testTag("reject_subscription_payment_${pay.id}")
-                                            ) {
-                                                Text("Reject UTR", color = SkillErrorRed)
-                                            }
+                            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text("${pay.notes.ifBlank { pay.paymentType }} (${pay.transactionRef})", fontWeight = FontWeight.Bold)
+                                Text("Type: ${pay.paymentType.uppercase()} • Method: ${pay.method.uppercase()} • Amount: ₹${pay.amountInr} • User: ${pay.userId}", style = MaterialTheme.typography.bodySmall)
+                                Text("Status: ${pay.status.uppercase()} • Key: ${pay.id}", style = MaterialTheme.typography.labelSmall, color = SkillBlue)
+                                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    if (pay.paymentType == "subscription" && pay.status == "pending" && (isCeo || isFounderAccessGroup)) {
+                                        Button(
+                                            onClick = {
+                                                onReviewSubscriptionPayment(pay, true, subscriptionVerificationNote)
+                                            },
+                                            colors = ButtonDefaults.buttonColors(containerColor = SkillSuccessGreen),
+                                            modifier = Modifier.testTag("approve_subscription_payment_${pay.id}")
+                                        ) {
+                                            Text("Approve & Activate Premium")
                                         }
-                                        if (pay.status == "refund_pending" || pay.status == "disputed") {
-                                            if (isFounder || (isCeo && !exceedsCeoThreshold)) {
-                                                Button(
-                                                    onClick = { onProcessPaymentAction(pay, "refunded", "Refund approved by ${effectiveRole.uppercase()}") },
-                                                    colors = ButtonDefaults.buttonColors(containerColor = SkillSuccessGreen)
-                                                ) {
-                                                    Text(if (isCeo) "CEO Approve Refund (<= ₹10k)" else "Founder Approve Refund")
-                                                }
-                                            } else if (isCeo && exceedsCeoThreshold) {
-                                                Text(
-                                                    "Requires Founder approval (> ₹10,000 INR)",
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = SkillWarningAmber,
-                                                    fontWeight = FontWeight.Bold
-                                                )
-                                            }
+                                        OutlinedButton(
+                                            onClick = {
+                                                onReviewSubscriptionPayment(pay, false, subscriptionVerificationNote)
+                                            },
+                                            modifier = Modifier.testTag("reject_subscription_payment_${pay.id}")
+                                        ) {
+                                            Text("Reject UTR", color = SkillErrorRed)
                                         }
-                                        if (pay.paymentType == "payout" && pay.status == "pending") {
+                                    }
+                                    if (pay.status == "refund_pending" || pay.status == "disputed") {
+                                        if (isFounderAccessGroup || (isCeo && !exceedsCeoThreshold)) {
                                             Button(
-                                                onClick = { onProcessPaymentAction(pay, "paid_out", "Payout settled by ${effectiveRole.uppercase()}") },
+                                                onClick = { onProcessPaymentAction(pay, "refunded", "Refund approved by ${effectiveRole.uppercase()}") },
                                                 colors = ButtonDefaults.buttonColors(containerColor = SkillSuccessGreen)
                                             ) {
-                                                Text("Mark Payout Settled")
+                                                Text(if (isCeo) "CEO Approve Refund (<= ₹10k)" else "${if (isCoFounder) "Co-Founder" else "Founder"} Approve Refund")
                                             }
+                                        } else if (isCeo && exceedsCeoThreshold) {
+                                            Text(
+                                                "Requires Founder / Co-Founder approval (> ₹10,000 INR)",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = SkillWarningAmber,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+                                    if (pay.paymentType == "payout" && pay.status == "pending") {
+                                        Button(
+                                            onClick = { onProcessPaymentAction(pay, "paid_out", "Payout settled by ${effectiveRole.uppercase()}") },
+                                            colors = ButtonDefaults.buttonColors(containerColor = SkillSuccessGreen)
+                                        ) {
+                                            Text("Mark Payout Settled")
                                         }
                                     }
                                 }
@@ -3208,7 +3173,7 @@ fun AdminDashboardScreen(
                                     ) {
                                         Text("Resolve Ticket")
                                     }
-                                    if ((isCeo || isFounder) && tkt.category.contains("Role Change", ignoreCase = true)) {
+                                    if ((isCeo || isFounderAccessGroup) && tkt.category.contains("Role Change", ignoreCase = true)) {
                                         OutlinedButton(
                                             onClick = { onRespondSupportTicket(tkt, "resolved", "Role switched to Provider", "provider") }
                                         ) {
@@ -3533,64 +3498,6 @@ fun AdminDashboardScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showChangePasswordDialog = false }) { Text("Cancel") }
-            }
-        )
-    }
-
-    if (showSwitchRoleDialog) {
-        var targetRole by remember { mutableStateOf("cofounder") }
-        var username by remember { mutableStateOf("") }
-        var password by remember { mutableStateOf("") }
-        AlertDialog(
-            onDismissRequest = { showSwitchRoleDialog = false },
-            title = { Text("Switch Executive Login Card", fontWeight = FontWeight.Bold) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf(
-                            "cofounder" to "CO-FOUNDER",
-                            "ceo" to "CEO",
-                            "founder" to "FOUNDER"
-                        ).forEach { (rKey, label) ->
-                            FilterChip(
-                                selected = targetRole == rKey,
-                                onClick = {
-                                    targetRole = rKey
-                                    username = ""
-                                },
-                                label = { Text(label) }
-                            )
-                        }
-                    }
-                    OutlinedTextField(
-                        value = username,
-                        onValueChange = { username = it },
-                        label = { Text("${targetRole.uppercase()} Username") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = password,
-                        onValueChange = { password = it },
-                        label = { Text("Executive Password") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        showSwitchRoleDialog = false
-                        onLoginExecutiveAdmin(targetRole, username, password)
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = SkillBlue)
-                ) {
-                    Text("Authenticate ${targetRole.uppercase()}")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showSwitchRoleDialog = false }) { Text("Cancel") }
             }
         )
     }

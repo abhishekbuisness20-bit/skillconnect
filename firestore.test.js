@@ -324,7 +324,8 @@ test("6. Executive Admin RBAC: Co-Founder vs CEO (<= 10000 INR refund limit & Ad
     });
   });
 
-  // Co-Founder CAN approve provider verification, but CANNOT change user role or approve refunds
+  // Co-Founder (Founder-level Admin Access Group) CAN approve provider verification,
+  // while CEO CANNOT change user role
   await assertSucceeds(
     cofounderDb.collection("user_profiles").doc(BOB_UID).update({
       isVerified: true,
@@ -333,15 +334,15 @@ test("6. Executive Admin RBAC: Co-Founder vs CEO (<= 10000 INR refund limit & Ad
     })
   );
   await assertFails(
-    cofounderDb.collection("user_profiles").doc(BOB_UID).update({
+    ceoDb.collection("user_profiles").doc(BOB_UID).update({
       role: "customer",
       updatedAt: new Date(),
     })
   );
+  // Co-Founder cannot modify another admin's account in /admins (Founder-only privilege)
   await assertFails(
-    cofounderDb.collection("payments").doc("pay_small_5000").update({
-      status: "refunded",
-      notes: "Co-founder attempted refund",
+    cofounderDb.collection("admins").doc(CEO_UID).update({
+      adminRole: "cofounder",
       updatedAt: new Date(),
     })
   );
@@ -372,28 +373,19 @@ test("6. Executive Admin RBAC: Co-Founder vs CEO (<= 10000 INR refund limit & Ad
   );
 });
 
-test("7. 15-Minute Admin Session Expiry blocks expired Co-Founder/CEO writes while Founder Exception preserves Founder access", async () => {
+test("7. 15-Minute Admin Session Expiry blocks expired CEO writes while Founder-Level Access Group preserves access", async () => {
   const now = new Date();
   await testEnv.withSecurityRulesDisabled(async (ctx) => {
     await ctx.firestore().collection("user_profiles").doc(BOB_UID).set(makeValidProfile(BOB_UID, "provider", false));
     // Expired 20 minutes ago (-20)
-    await ctx.firestore().collection("admins").doc(COFOUNDER_UID).set(makeAdminDoc(COFOUNDER_UID, "cofounder", "Abhay", -20));
     await ctx.firestore().collection("admins").doc(CEO_UID).set(makeAdminDoc(CEO_UID, "ceo", "Abhay", -20));
     await ctx.firestore().collection("admins").doc(FOUNDER_UID).set(makeAdminDoc(FOUNDER_UID, "founder", "Abhisheksingh", -20));
   });
 
-  const cofounderDb = testEnv.authenticatedContext(COFOUNDER_UID).firestore();
   const ceoDb = testEnv.authenticatedContext(CEO_UID).firestore();
   const founderDb = testEnv.authenticatedContext(FOUNDER_UID).firestore();
 
-  // Expired Co-Founder and CEO sessions are rejected by server rules
-  await assertFails(
-    cofounderDb.collection("user_profiles").doc(BOB_UID).update({
-      isVerified: true,
-      verificationStatus: "approved",
-      updatedAt: new Date(),
-    })
-  );
+  // Expired CEO session is rejected by server rules
   await assertFails(
     ceoDb.collection("user_profiles").doc(BOB_UID).update({
       isVerified: true,
@@ -481,4 +473,184 @@ test("8. Direct UPI Subscriptions: User cannot self-activate premium or create s
     })
   );
 });
+
+test("9. Security Hardening: Bounded rating deltas (+1 review, +1..+5 stars), service self-featuring prevention, and booking refund state lock", async () => {
+  const now = new Date();
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
+  const bobDb = testEnv.authenticatedContext(BOB_UID).firestore();
+
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await ctx.firestore().collection("user_profiles").doc(BOB_UID).set(makeValidProfile(BOB_UID, "provider", true));
+    await ctx.firestore().collection("services").doc("srv_bob").set(makeValidService(BOB_UID, true));
+    await ctx.firestore().collection("booking_requests").doc("bk_sec_1").set({
+      customerId: ALICE_UID,
+      customerName: "Alice",
+      providerId: BOB_UID,
+      providerName: "Bob",
+      serviceId: "srv_bob",
+      serviceTitle: "Logo Design",
+      category: "Logo Design",
+      requirements: "Need a modern brand identity package.",
+      preferredDate: "2026-11-10",
+      attachmentNote: "",
+      quotedPrice: 2500,
+      requestType: "booking",
+      status: "confirmed",
+      statusNote: "",
+      hasReviewed: false,
+      paymentMethod: "upi",
+      paymentStatus: "paid_online",
+      platformFeeInr: 125,
+      totalAmountInr: 2625,
+      createdAt: now,
+      updatedAt: now,
+    });
+  });
+
+  // 1. Arbitrary rating jump (e.g., +500 ratingSum or +10 reviewCount) on service or profile MUST FAIL
+  await assertFails(
+    aliceDb.collection("services").doc("srv_bob").update({
+      ratingSum: 500,
+      reviewCount: 1,
+      updatedAt: new Date(),
+    })
+  );
+  await assertFails(
+    aliceDb.collection("user_profiles").doc(BOB_UID).update({
+      ratingSum: 500,
+      reviewCount: 100,
+      updatedAt: new Date(),
+    })
+  );
+
+  // 2. Bounded single-review increment (+1 reviewCount, +5 ratingSum) MUST SUCCEED
+  await assertSucceeds(
+    aliceDb.collection("services").doc("srv_bob").update({
+      ratingSum: 5,
+      reviewCount: 1,
+      updatedAt: new Date(),
+    })
+  );
+  await assertSucceeds(
+    aliceDb.collection("user_profiles").doc(BOB_UID).update({
+      ratingSum: 5,
+      reviewCount: 1,
+      updatedAt: new Date(),
+    })
+  );
+
+  // 3. Provider cannot self-feature a service on create or update
+  const selfFeaturedService = { ...makeValidService(BOB_UID, true), isFeatured: true };
+  await assertFails(bobDb.collection("services").doc("srv_featured_hack").set(selfFeaturedService));
+  await assertFails(
+    bobDb.collection("services").doc("srv_bob").update({
+      isFeatured: true,
+      updatedAt: new Date(),
+    })
+  );
+
+  // 4. Customer cannot self-mark booking paymentStatus = 'refunded' or tamper with platformFeeInr
+  await assertFails(
+    aliceDb.collection("booking_requests").doc("bk_sec_1").update({
+      paymentStatus: "refunded",
+      updatedAt: new Date(),
+    })
+  );
+  await assertFails(
+    aliceDb.collection("booking_requests").doc("bk_sec_1").update({
+      platformFeeInr: 0,
+      updatedAt: new Date(),
+    })
+  );
+});
+
+test("10. Security Hardening: /projects schema enforcement, shadow field rejection, and scrypt/PBKDF2 admin password verifier support", async () => {
+  const now = new Date();
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
+  const bobDb = testEnv.authenticatedContext(BOB_UID).firestore();
+  const founderDb = testEnv.authenticatedContext(FOUNDER_UID).firestore();
+
+  const validProject = {
+    projectId: "prj_valid_1",
+    projectRef: "SC-PRJ-VALID001",
+    customerId: ALICE_UID,
+    customerName: "Alice",
+    customerEmail: "alice@example.com",
+    providerId: BOB_UID,
+    providerName: "Bob",
+    serviceId: "srv_bob",
+    serviceTitle: "Logo Design",
+    category: "Graphic Design",
+    title: "Rebrand Packaging & Logo",
+    description: "Need full vector packaging and brand identity guidelines.",
+    requirements: "Deliver in SVG and PDF formats.",
+    budget: 5000,
+    expectedDeliveryDate: "2026-11-20",
+    additionalInstructions: "Keep palette minimal.",
+    attachments: "",
+    deliveryFiles: "",
+    deliveryNotes: "",
+    status: "new_request",
+    providerResponse: "",
+    revisionRequests: "",
+    conversationId: "",
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  // Valid project creation succeeds
+  await assertSucceeds(aliceDb.collection("projects").doc("prj_valid_1").set(validProject));
+
+  // Shadow field injection on /projects create or update MUST FAIL
+  await assertFails(
+    aliceDb.collection("projects").doc("prj_hack_1").set({
+      ...validProject,
+      isAdminOverride: true,
+    })
+  );
+  await assertFails(
+    bobDb.collection("projects").doc("prj_valid_1").update({
+      status: "accepted",
+      injectedScript: "<script>alert(1)</script>",
+      updatedAt: new Date(),
+    })
+  );
+
+  // Valid provider status update on /projects succeeds
+  await assertSucceeds(
+    bobDb.collection("projects").doc("prj_valid_1").update({
+      status: "accepted",
+      providerResponse: "Accepted and starting concept work.",
+      updatedAt: new Date(),
+    })
+  );
+
+  // Key-stretched scrypt$ admin password hash succeeds while plaintext password fails
+  const scryptAdminDoc = {
+    ...makeAdminDoc(FOUNDER_UID, "founder", "Abhisheksingh", 15),
+    passwordVerifierHash: `scrypt$16384$8$1$${"b".repeat(64)}`,
+  };
+  await assertSucceeds(founderDb.collection("admins").doc(FOUNDER_UID).set(scryptAdminDoc));
+
+  const plaintextAdminDoc = {
+    ...makeAdminDoc(FOUNDER_UID, "founder", "Abhisheksingh", 15),
+    passwordVerifierHash: "PlaintextPassword123!",
+  };
+  await assertFails(founderDb.collection("admins").doc(FOUNDER_UID).set(plaintextAdminDoc));
+
+  // Unauthorized Gmail account is strictly rejected when attempting to provision an admin record
+  const unauthorizedGmailDb = testEnv
+    .authenticatedContext("intruder_uid_99", {
+      email: "intruder.unauthorized@gmail.com",
+      email_verified: true,
+    })
+    .firestore();
+  await assertFails(
+    unauthorizedGmailDb
+      .collection("admins")
+      .doc("intruder_uid_99")
+      .set(makeAdminDoc("intruder_uid_99", "ceo", "Abhay", 15))
+  );
+});
+
 

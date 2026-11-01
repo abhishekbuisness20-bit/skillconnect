@@ -5,6 +5,7 @@ import com.example.R
 import com.example.data.model.AdminAccount
 import com.example.data.model.AdminAuditLog
 import com.example.data.model.AppNotification
+import com.example.data.model.AuthorizedAdminConfig
 import com.example.data.model.BookingRequest
 import com.example.data.model.ChatMessage
 import com.example.data.model.Conversation
@@ -12,12 +13,17 @@ import com.example.data.model.FavouriteItem
 import com.example.data.model.PaymentDispute
 import com.example.data.model.PaymentRecord
 import com.example.data.model.PlatformSetting
+import com.example.data.model.ProjectAttachmentMeta
+import com.example.data.model.ProjectRevisionItem
+import com.example.data.model.ProjectSubmission
 import com.example.data.model.SafetyReport
 import com.example.data.model.ServiceListing
 import com.example.data.model.ServiceReview
 import com.example.data.model.SupportTicket
 import com.example.data.model.UserProfile
 import com.example.data.model.VerificationSubmission
+import com.example.data.model.encodeProjectAttachments
+import com.example.data.model.encodeProjectRevisions
 import com.example.data.remote.OperationType
 import com.example.data.remote.handleFirestoreError
 import com.google.firebase.Firebase
@@ -32,7 +38,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.tasks.await
-import java.security.MessageDigest
+import com.example.util.SecuritySanitizer
 import java.util.Date
 import java.util.UUID
 
@@ -1044,13 +1050,14 @@ class SkillConnectRepository(private val db: FirebaseFirestore) {
         val uid = requireUserId()
         val msgId = "msg_${UUID.randomUUID().toString().replace("-", "").take(16)}"
         val msgRef = db.collection("messages").document(msgId)
-        val trimmedText = text.trim().take(1000)
+        val trimmedText = SecuritySanitizer.sanitizeText(text, 1000)
+        require(trimmedText.isNotBlank()) { "Message text cannot be empty." }
         val payload = mapOf(
             "conversationId" to conversationId,
             "customerId" to customerId,
             "providerId" to providerId,
             "senderId" to uid,
-            "senderName" to senderName.trim().ifBlank { "Member" }.take(80),
+            "senderName" to SecuritySanitizer.sanitizeText(senderName, 80).ifBlank { "Member" },
             "text" to trimmedText,
             "isRead" to false,
             "createdAt" to FieldValue.serverTimestamp()
@@ -1168,14 +1175,16 @@ class SkillConnectRepository(private val db: FirebaseFirestore) {
         val uid = requireUserId()
         val reviewRef = db.collection("reviews").document(booking.id)
         val ratingLong = rating.coerceIn(1, 5).toLong()
+        val cleanComment = SecuritySanitizer.sanitizeText(comment, 1000)
+        require(cleanComment.length >= 3) { "Review comment must be at least 3 characters." }
         val payload = mapOf(
             "bookingId" to booking.id,
             "serviceId" to booking.serviceId,
             "providerId" to booking.providerId,
             "customerId" to uid,
-            "customerName" to booking.customerName.trim().ifBlank { "Customer" }.take(80),
+            "customerName" to SecuritySanitizer.sanitizeText(booking.customerName, 80).ifBlank { "Customer" },
             "rating" to ratingLong,
-            "comment" to comment.trim().take(1000),
+            "comment" to cleanComment,
             "isReported" to false,
             "moderationStatus" to "published",
             "createdAt" to FieldValue.serverTimestamp(),
@@ -1682,9 +1691,7 @@ class SkillConnectRepository(private val db: FirebaseFirestore) {
     // --- 12. Tiered Executive Admin Accounts (Co-Founder, CEO, Founder) & 15-Minute Session Security ---
 
     fun hashAdminPassword(password: String, salt: String): String {
-        val digest = MessageDigest.getInstance("SHA-256")
-        val bytes = digest.digest("$salt:${password.trim()}".toByteArray(Charsets.UTF_8))
-        return bytes.joinToString("") { "%02x".format(it) }
+        return SecuritySanitizer.hashAdminPasswordPbkdf2(password, salt)
     }
 
     fun observeMyAdminAccount(adminUid: String): Flow<AdminAccount?> =
@@ -1717,69 +1724,96 @@ class SkillConnectRepository(private val db: FirebaseFirestore) {
                 throw e
             }
 
+    suspend fun syncAuthorizedAdminRoleAndPermissionsOnLogin(): Result<AdminAccount?> = runCatching {
+        val uid = auth.currentUser?.uid ?: return@runCatching null
+        val authEmail = auth.currentUser?.email.orEmpty().trim().lowercase()
+        val emailSpec = AuthorizedAdminConfig.resolveForEmail(authEmail) ?: return@runCatching null
+
+        val docRef = db.collection("admins").document(uid)
+        val snap = docRef.get().await()
+        if (!snap.exists()) {
+            return@runCatching null
+        }
+
+        val existing = snap.toObject(AdminAccount::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+            ?: return@runCatching null
+
+        val updates = mutableMapOf<String, Any>(
+            "username" to emailSpec.defaultUsername,
+            "adminEmail" to authEmail,
+            "accessGroup" to emailSpec.accessGroup,
+            "permissions" to emailSpec.permissions,
+            "updatedAt" to FieldValue.serverTimestamp()
+        )
+        if (emailSpec.adminRole == "founder") {
+            updates["adminRole"] = emailSpec.adminRole
+            updates["canonicalAccountId"] = emailSpec.canonicalAccountId
+            updates["displayName"] = emailSpec.displayName
+            updates["founderSessionPersistent"] = emailSpec.founderSessionPersistent
+        }
+
+        docRef.update(updates).await()
+        existing.copy(
+            adminRole = emailSpec.adminRole,
+            canonicalAccountId = emailSpec.canonicalAccountId,
+            displayName = emailSpec.displayName,
+            username = emailSpec.defaultUsername,
+            adminEmail = authEmail,
+            accessGroup = emailSpec.accessGroup,
+            permissions = emailSpec.permissions
+        )
+    }
+
     suspend fun authenticateOrProvisionExecutiveAdmin(
-        selectedRole: String,
-        enteredUsername: String,
+        selectedRole: String = "",
+        enteredUsername: String = "",
         enteredPassword: String,
         sessionTimeoutMinutes: Long = 15L
     ): Result<AdminAccount> = runCatching {
         val uid = requireUserId()
-        val normalizedRole = selectedRole.trim().lowercase()
-        val cleanUsername = enteredUsername.trim()
+        val authEmail = auth.currentUser?.email.orEmpty().trim().lowercase()
         val cleanPassword = enteredPassword.trim()
         require(cleanPassword.length >= 6) {
             "Administrative password must be at least 6 characters."
         }
 
-        val (canonicalId, displayName, canonicalUsername, isFounderPersistent) = when (normalizedRole) {
-            "cofounder" -> {
-                require(cleanUsername.equals("Abhay", ignoreCase = true)) {
-                    "Co-Founder Login strictly requires username 'Abhay'."
-                }
-                Quadruple("ADM-COF-001", "Abhay", "Abhay", false)
-            }
-            "ceo" -> {
-                require(cleanUsername.equals("Abhay", ignoreCase = true) || cleanUsername.equals("Adarsh", ignoreCase = true)) {
-                    "CEO Login requires accepted username alias 'Abhay' or 'Adarsh'."
-                }
-                val resolvedAlias = if (cleanUsername.equals("Adarsh", ignoreCase = true)) "Adarsh" else "Abhay"
-                Quadruple("ADM-CEO-001", "CEO", resolvedAlias, false)
-            }
-            "founder" -> {
-                require(cleanUsername.equals("Abhisheksingh", ignoreCase = true)) {
-                    "Founder Login strictly requires username 'Abhisheksingh'."
-                }
-                Quadruple("ADM-FND-001", "Founder", "Abhisheksingh", true)
-            }
-            else -> throw IllegalArgumentException("Invalid administrative role selected.")
-        }
-
-        val nowMs = System.currentTimeMillis()
-        val expiresAtMs = if (isFounderPersistent) {
-            nowMs + 365L * 24L * 60L * 60L * 1000L
-        } else {
-            nowMs + sessionTimeoutMinutes.coerceIn(5L, 120L) * 60L * 1000L
-        }
-        val sessionExpiresTimestamp = Timestamp(Date(expiresAtMs))
-
         val docRef = db.collection("admins").document(uid)
+        val nowMs = System.currentTimeMillis()
+
         try {
             val snap = docRef.get().await()
+            val emailSpec = AuthorizedAdminConfig.resolveForEmail(authEmail)
+
             if (!snap.exists()) {
-                val salt = "sc_salt_${UUID.randomUUID().toString().replace("-", "").take(16)}"
+                // Only one of the 3 authorized Admin Google emails can be provisioned
+                val spec = emailSpec ?: throw SecurityException(
+                    "Unauthorized Admin Account: '${authEmail.ifBlank { "Unverified Account" }}' is not an authorized SkillConnect Admin Gmail account. Access is strictly restricted to the configured Founder, Co-Founder, and CEO accounts."
+                )
+
+                val expiresAtMs = if (spec.founderSessionPersistent) {
+                    nowMs + 365L * 24L * 60L * 60L * 1000L
+                } else {
+                    nowMs + sessionTimeoutMinutes.coerceIn(5L, 120L) * 60L * 1000L
+                }
+                val sessionExpiresTimestamp = Timestamp(Date(expiresAtMs))
+
+                val salt = SecuritySanitizer.generateCryptographicSalt()
                 val verifierHash = hashAdminPassword(cleanPassword, salt)
                 val payload = mapOf(
                     "adminUid" to uid,
-                    "canonicalAccountId" to canonicalId,
-                    "adminRole" to normalizedRole,
-                    "displayName" to displayName,
-                    "username" to canonicalUsername,
+                    "canonicalAccountId" to spec.canonicalAccountId,
+                    "adminRole" to spec.adminRole,
+                    "displayName" to spec.displayName,
+                    "username" to spec.defaultUsername,
+                    "adminEmail" to authEmail.take(120),
+                    "accessGroup" to spec.accessGroup,
+                    "permissions" to spec.permissions,
                     "passwordVerifierHash" to verifierHash,
                     "passwordSalt" to salt,
                     "mustChangePassword" to false,
                     "failedAttempts" to 0L,
                     "lockedUntilEpochMs" to 0L,
-                    "founderSessionPersistent" to isFounderPersistent,
+                    "founderSessionPersistent" to spec.founderSessionPersistent,
                     "sessionExpiresAt" to sessionExpiresTimestamp,
                     "createdAt" to FieldValue.serverTimestamp(),
                     "updatedAt" to FieldValue.serverTimestamp()
@@ -1788,16 +1822,19 @@ class SkillConnectRepository(private val db: FirebaseFirestore) {
                 AdminAccount(
                     id = uid,
                     adminUid = uid,
-                    canonicalAccountId = canonicalId,
-                    adminRole = normalizedRole,
-                    displayName = displayName,
-                    username = canonicalUsername,
+                    canonicalAccountId = spec.canonicalAccountId,
+                    adminRole = spec.adminRole,
+                    displayName = spec.displayName,
+                    username = spec.defaultUsername,
+                    adminEmail = authEmail.take(120),
+                    accessGroup = spec.accessGroup,
+                    permissions = spec.permissions,
                     passwordVerifierHash = verifierHash,
                     passwordSalt = salt,
                     mustChangePassword = false,
                     failedAttempts = 0L,
                     lockedUntilEpochMs = 0L,
-                    founderSessionPersistent = isFounderPersistent,
+                    founderSessionPersistent = spec.founderSessionPersistent,
                     sessionExpiresAt = sessionExpiresTimestamp
                 )
             } else {
@@ -1806,17 +1843,31 @@ class SkillConnectRepository(private val db: FirebaseFirestore) {
 
                 if (existing.lockedUntilEpochMs > nowMs) {
                     val remainingSec = ((existing.lockedUntilEpochMs - nowMs) / 1000L).coerceAtLeast(1L)
-                    throw IllegalStateException("Account temporarily locked due to failed login attempts. Try again in ${remainingSec}s.")
+                    throw IllegalStateException("Account temporarily locked due to 3 failed login attempts. Try again in ${remainingSec}s.")
                 }
 
-                if (existing.adminRole != normalizedRole) {
-                    throw IllegalStateException(
-                        "This Google account is already bound to the ${existing.displayName} (${existing.canonicalAccountId}) role. Role self-escalation is prohibited; only the Founder can reassign administrative roles."
-                    )
-                }
+                // Resolve canonical role & permissions from authorized email if matched, otherwise keep Founder-provisioned role
+                val resolvedRole = emailSpec?.adminRole ?: existing.adminRole
+                val resolvedCanonicalId = emailSpec?.canonicalAccountId ?: existing.canonicalAccountId
+                val resolvedDisplayName = emailSpec?.displayName ?: existing.displayName
+                val resolvedUsername = emailSpec?.defaultUsername ?: existing.username
+                val resolvedAccessGroup = emailSpec?.accessGroup ?: AuthorizedAdminConfig.accessGroupForRole(resolvedRole)
+                val resolvedPermissions = emailSpec?.permissions ?: AuthorizedAdminConfig.permissionsForRole(resolvedRole)
+                val isFounderPersistent = emailSpec?.founderSessionPersistent ?: existing.founderSessionPersistent
 
-                val computedHash = hashAdminPassword(cleanPassword, existing.passwordSalt)
-                if (!computedHash.equals(existing.passwordVerifierHash, ignoreCase = true)) {
+                val expiresAtMs = if (isFounderPersistent) {
+                    nowMs + 365L * 24L * 60L * 60L * 1000L
+                } else {
+                    nowMs + sessionTimeoutMinutes.coerceIn(5L, 120L) * 60L * 1000L
+                }
+                val sessionExpiresTimestamp = Timestamp(Date(expiresAtMs))
+
+                val (isPasswordValid, needsUpgradeToPbkdf2) = SecuritySanitizer.verifyAdminPasswordConstantTime(
+                    enteredPassword = cleanPassword,
+                    salt = existing.passwordSalt,
+                    storedVerifier = existing.passwordVerifierHash
+                )
+                if (!isPasswordValid) {
                     val baseAttempts = if (existing.failedAttempts >= 3L) 0L else existing.failedAttempts
                     val nextFailed = baseAttempts + 1L
                     val lockUntil = if (nextFailed >= 3L) nowMs + 60_000L else 0L
@@ -1835,18 +1886,38 @@ class SkillConnectRepository(private val db: FirebaseFirestore) {
                     }
                 }
 
-                docRef.update(
-                    mapOf(
-                        "username" to canonicalUsername,
-                        "failedAttempts" to 0L,
-                        "lockedUntilEpochMs" to 0L,
-                        "sessionExpiresAt" to sessionExpiresTimestamp,
-                        "updatedAt" to FieldValue.serverTimestamp()
-                    )
-                ).await()
+                val updateFields = mutableMapOf<String, Any>(
+                    "username" to resolvedUsername,
+                    "adminEmail" to authEmail.take(120),
+                    "accessGroup" to resolvedAccessGroup,
+                    "permissions" to resolvedPermissions,
+                    "failedAttempts" to 0L,
+                    "lockedUntilEpochMs" to 0L,
+                    "sessionExpiresAt" to sessionExpiresTimestamp,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+                if (needsUpgradeToPbkdf2) {
+                    val upgradedSalt = SecuritySanitizer.generateCryptographicSalt()
+                    updateFields["passwordSalt"] = upgradedSalt
+                    updateFields["passwordVerifierHash"] = hashAdminPassword(cleanPassword, upgradedSalt)
+                }
+                if (emailSpec?.adminRole == "founder") {
+                    updateFields["adminRole"] = resolvedRole
+                    updateFields["canonicalAccountId"] = resolvedCanonicalId
+                    updateFields["displayName"] = resolvedDisplayName
+                    updateFields["founderSessionPersistent"] = isFounderPersistent
+                }
+
+                docRef.update(updateFields).await()
 
                 existing.copy(
-                    username = canonicalUsername,
+                    adminRole = resolvedRole,
+                    canonicalAccountId = resolvedCanonicalId,
+                    displayName = resolvedDisplayName,
+                    username = resolvedUsername,
+                    adminEmail = authEmail.take(120),
+                    accessGroup = resolvedAccessGroup,
+                    permissions = resolvedPermissions,
                     failedAttempts = 0L,
                     lockedUntilEpochMs = 0L,
                     sessionExpiresAt = sessionExpiresTimestamp
@@ -1900,11 +1971,15 @@ class SkillConnectRepository(private val db: FirebaseFirestore) {
             val snap = docRef.get().await()
             val existing = snap.toObject(AdminAccount::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
                 ?: throw IllegalStateException("Admin account not found.")
-            val currentHash = hashAdminPassword(currentPassword.trim(), existing.passwordSalt)
-            require(currentHash.equals(existing.passwordVerifierHash, ignoreCase = true)) {
+            val (isCurrentValid, _) = SecuritySanitizer.verifyAdminPasswordConstantTime(
+                enteredPassword = currentPassword.trim(),
+                salt = existing.passwordSalt,
+                storedVerifier = existing.passwordVerifierHash
+            )
+            require(isCurrentValid) {
                 "Current administrative password is incorrect."
             }
-            val newSalt = "sc_salt_${UUID.randomUUID().toString().replace("-", "").take(16)}"
+            val newSalt = SecuritySanitizer.generateCryptographicSalt()
             val newHash = hashAdminPassword(cleanNew, newSalt)
             docRef.update(
                 mapOf(
@@ -1943,13 +2018,15 @@ class SkillConnectRepository(private val db: FirebaseFirestore) {
             "canonicalAccountId" to canonicalId,
             "displayName" to displayName,
             "username" to defaultUsername,
+            "accessGroup" to AuthorizedAdminConfig.accessGroupForRole(normalizedRole),
+            "permissions" to AuthorizedAdminConfig.permissionsForRole(normalizedRole),
             "founderSessionPersistent" to isFounderPersistent,
             "failedAttempts" to 0L,
             "lockedUntilEpochMs" to 0L,
             "updatedAt" to FieldValue.serverTimestamp()
         )
         if (newPasswordOptional.trim().length >= 6) {
-            val newSalt = "sc_salt_${UUID.randomUUID().toString().replace("-", "").take(16)}"
+            val newSalt = SecuritySanitizer.generateCryptographicSalt()
             updates["passwordSalt"] = newSalt
             updates["passwordVerifierHash"] = hashAdminPassword(newPasswordOptional.trim(), newSalt)
             updates["mustChangePassword"] = true
@@ -2090,6 +2167,206 @@ class SkillConnectRepository(private val db: FirebaseFirestore) {
                     "assignedRole" to assignedRole,
                     "adminDecisionNote" to decisionNote.trim().take(600),
                     "decidedByAdminId" to adminUid,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, docRef.path)
+            throw e
+        }
+    }
+
+    // --- 14. Customer-to-Service-Provider Project Submission System (/projects/{projectId}) ---
+
+    fun observeCustomerProjects(customerId: String): Flow<List<ProjectSubmission>> =
+        db.collection("projects")
+            .whereEqualTo("customerId", customerId)
+            .snapshots()
+            .map { snap ->
+                snap.toObjects(ProjectSubmission::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+            }
+            .catch { e ->
+                if (e is Exception && e !is CancellationException) {
+                    handleFirestoreError(e, OperationType.LIST, "projects?customerId=$customerId")
+                }
+                throw e
+            }
+
+    fun observeProviderProjects(providerId: String): Flow<List<ProjectSubmission>> =
+        db.collection("projects")
+            .whereEqualTo("providerId", providerId)
+            .snapshots()
+            .map { snap ->
+                snap.toObjects(ProjectSubmission::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+            }
+            .catch { e ->
+                if (e is Exception && e !is CancellationException) {
+                    handleFirestoreError(e, OperationType.LIST, "projects?providerId=$providerId")
+                }
+                throw e
+            }
+
+    suspend fun submitCustomerProject(
+        customerName: String,
+        customerEmail: String,
+        providerId: String,
+        providerName: String,
+        serviceId: String,
+        serviceTitle: String,
+        category: String,
+        title: String,
+        description: String,
+        requirements: String,
+        budgetInr: Long,
+        expectedDeliveryDate: String,
+        additionalInstructions: String,
+        attachments: List<ProjectAttachmentMeta>
+    ): Result<String> = runCatching {
+        val uid = requireUserId()
+        require(uid != providerId) { "You cannot submit a project request to your own provider account." }
+        val projectId = "prj_${UUID.randomUUID().toString().replace("-", "").take(16)}"
+        val projectRef = "SC-PRJ-${projectId.removePrefix("prj_").uppercase().take(8)}"
+        val docRef = db.collection("projects").document(projectId)
+        val payload = mapOf(
+            "projectId" to projectId,
+            "projectRef" to projectRef,
+            "customerId" to uid,
+            "customerName" to SecuritySanitizer.sanitizeText(customerName, 80).ifBlank { "Customer" },
+            "customerEmail" to SecuritySanitizer.sanitizeText(customerEmail, 120),
+            "providerId" to providerId.trim().take(128),
+            "providerName" to SecuritySanitizer.sanitizeText(providerName, 80).ifBlank { "Service Provider" },
+            "serviceId" to serviceId.trim().take(128),
+            "serviceTitle" to SecuritySanitizer.sanitizeText(serviceTitle, 140),
+            "category" to SecuritySanitizer.sanitizeText(category, 80).ifBlank { "General" },
+            "title" to SecuritySanitizer.sanitizeText(title, 150),
+            "description" to SecuritySanitizer.sanitizeText(description, 3500),
+            "requirements" to SecuritySanitizer.sanitizeText(requirements, 2500),
+            "budget" to budgetInr.coerceIn(0L, 100000000L),
+            "expectedDeliveryDate" to SecuritySanitizer.sanitizeText(expectedDeliveryDate, 80),
+            "additionalInstructions" to SecuritySanitizer.sanitizeText(additionalInstructions, 1500),
+            "attachments" to encodeProjectAttachments(attachments),
+            "deliveryFiles" to "",
+            "deliveryNotes" to "",
+            "status" to "new_request",
+            "providerResponse" to "",
+            "revisionRequests" to "",
+            "conversationId" to "",
+            "createdAt" to FieldValue.serverTimestamp(),
+            "updatedAt" to FieldValue.serverTimestamp()
+        )
+        try {
+            docRef.set(payload).await()
+            projectId
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.CREATE, docRef.path)
+            throw e
+        }
+    }
+
+    suspend fun updateProviderProjectStatus(
+        project: ProjectSubmission,
+        newStatus: String,
+        providerResponse: String
+    ): Result<Unit> = runCatching {
+        requireUserId()
+        val targetId = project.id.ifBlank { project.projectId }
+        val docRef = db.collection("projects").document(targetId)
+        val updates = mutableMapOf<String, Any>(
+            "status" to newStatus,
+            "providerResponse" to providerResponse.trim().take(1500),
+            "updatedAt" to FieldValue.serverTimestamp()
+        )
+        if (newStatus == "completed") {
+            updates["completedAt"] = FieldValue.serverTimestamp()
+        }
+        try {
+            docRef.update(updates).await()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, docRef.path)
+            throw e
+        }
+    }
+
+    suspend fun submitProviderProjectDelivery(
+        project: ProjectSubmission,
+        deliveryFiles: List<ProjectAttachmentMeta>,
+        deliveryNotes: String
+    ): Result<Unit> = runCatching {
+        requireUserId()
+        val targetId = project.id.ifBlank { project.projectId }
+        val docRef = db.collection("projects").document(targetId)
+        val mergedDeliveries = (project.parsedDeliveryFiles + deliveryFiles).distinctBy { it.id.ifBlank { it.fileName } }
+        try {
+            docRef.update(
+                mapOf(
+                    "deliveryFiles" to encodeProjectAttachments(mergedDeliveries),
+                    "deliveryNotes" to deliveryNotes.trim().take(2000),
+                    "status" to "work_submitted",
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, docRef.path)
+            throw e
+        }
+    }
+
+    suspend fun requestCustomerProjectRevision(
+        project: ProjectSubmission,
+        requestedByName: String,
+        revisionNote: String
+    ): Result<Unit> = runCatching {
+        requireUserId()
+        val targetId = project.id.ifBlank { project.projectId }
+        val docRef = db.collection("projects").document(targetId)
+        val newRevision = ProjectRevisionItem(
+            id = "rev_${UUID.randomUUID().toString().take(8)}",
+            requestedBy = requestedByName.ifBlank { "Customer" },
+            note = revisionNote.trim().take(400),
+            createdAtMs = System.currentTimeMillis()
+        )
+        val updatedRevisions = project.parsedRevisions + newRevision
+        try {
+            docRef.update(
+                mapOf(
+                    "revisionRequests" to encodeProjectRevisions(updatedRevisions),
+                    "status" to "revision_requested",
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, docRef.path)
+            throw e
+        }
+    }
+
+    suspend fun confirmCustomerProjectCompletion(
+        project: ProjectSubmission,
+        completionNote: String
+    ): Result<Unit> = runCatching {
+        requireUserId()
+        val targetId = project.id.ifBlank { project.projectId }
+        val docRef = db.collection("projects").document(targetId)
+        try {
+            docRef.update(
+                mapOf(
+                    "status" to "completed",
+                    "providerResponse" to if (completionNote.isNotBlank()) {
+                        "${project.providerResponse}\n[Customer Confirmed Completion: ${completionNote.trim()}]".trim().take(1500)
+                    } else {
+                        project.providerResponse
+                    },
+                    "completedAt" to FieldValue.serverTimestamp(),
                     "updatedAt" to FieldValue.serverTimestamp()
                 )
             ).await()

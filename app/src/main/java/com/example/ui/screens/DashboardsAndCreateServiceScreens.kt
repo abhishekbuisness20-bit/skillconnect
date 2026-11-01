@@ -60,16 +60,22 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.material.icons.filled.AssignmentTurnedIn
+import androidx.compose.ui.text.style.TextOverflow
 import com.example.data.model.AppNotification
 import com.example.data.model.BookingRequest
 import com.example.data.model.FavouriteItem
 import com.example.data.model.MarketplaceCatalog
 import com.example.data.model.PaymentRecord
+import com.example.data.model.ProjectAttachmentMeta
+import com.example.data.model.ProjectSubmission
 import com.example.data.model.ServiceListing
 import com.example.data.model.ServiceReview
 import com.example.data.model.UserProfile
 import com.example.ui.AppDestination
 import com.example.ui.components.AllIndiaLocationSelectorField
+import com.example.ui.components.CustomerProjectCard
+import com.example.ui.components.ProviderProjectCard
 import com.example.ui.components.SkillConnectBrandLogo
 import com.example.ui.theme.SkillBlue
 import com.example.ui.theme.SkillCyan
@@ -84,6 +90,7 @@ fun CustomerDashboardScreen(
     profile: UserProfile?,
     fallbackName: String,
     customerBookings: List<BookingRequest>,
+    customerProjects: List<ProjectSubmission> = emptyList(),
     savedItems: List<FavouriteItem>,
     recentlyViewedServices: List<ServiceListing>,
     recommendedServices: List<ServiceListing>,
@@ -95,6 +102,10 @@ fun CustomerDashboardScreen(
     onSubmitReview: (BookingRequest, Int, String) -> Unit,
     onPayBooking: (BookingRequest, String) -> Unit = { _, _ -> },
     onRequestRefund: (BookingRequest, String) -> Unit = { _, _ -> },
+    onOpenSubmitProject: () -> Unit = {},
+    onRequestProjectRevision: (ProjectSubmission, String) -> Unit = { _, _ -> },
+    onConfirmProjectCompletion: (ProjectSubmission) -> Unit = {},
+    onMessageProjectProvider: (ProjectSubmission) -> Unit = {},
     onSignOut: () -> Unit = {},
     onNavigate: (AppDestination) -> Unit
 ) {
@@ -168,16 +179,25 @@ fun CustomerDashboardScreen(
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         Button(
+                            onClick = onOpenSubmitProject,
+                            colors = ButtonDefaults.buttonColors(containerColor = SkillSuccessGreen),
+                            modifier = Modifier.testTag("customer_dashboard_submit_project_btn")
+                        ) {
+                            Icon(Icons.Default.AssignmentTurnedIn, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Submit Your Project", fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
+                        }
+                        Button(
                             onClick = { onNavigate(AppDestination.EXPLORE) },
                             colors = ButtonDefaults.buttonColors(containerColor = SkillBlue)
                         ) {
-                            Text("Explore Services")
+                            Text("Explore Services", maxLines = 1, softWrap = false)
                         }
                         OutlinedButton(onClick = { onNavigate(AppDestination.PROVIDER_DIRECTORY) }) {
-                            Text("Provider Directory", color = Color.White)
+                            Text("Provider Directory", color = Color.White, maxLines = 1, softWrap = false)
                         }
                         OutlinedButton(onClick = { onNavigate(AppDestination.PROFILE_SETTINGS) }) {
-                            Text("Customer Profile", color = Color.White)
+                            Text("Customer Profile", color = Color.White, maxLines = 1, softWrap = false)
                         }
                     }
                 }
@@ -220,6 +240,71 @@ fun CustomerDashboardScreen(
                     DashboardStatCard(Modifier.weight(1f), "Accepted / Active", "$acceptedCount", SkillPurple)
                     DashboardStatCard(Modifier.weight(1f), "Completed Jobs", "$completedCount", SkillSuccessGreen)
                 }
+            }
+        }
+
+        // Customer Project Submission & My Projects Tracking Section
+        item {
+            Surface(
+                color = MaterialTheme.colorScheme.surface,
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(16.dp))
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "My Submitted Projects (${customerProjects.size})",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Send project briefs, reference photos, videos, PDFs & documents directly to service providers.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    Button(
+                        onClick = onOpenSubmitProject,
+                        colors = ButtonDefaults.buttonColors(containerColor = SkillBlue),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .testTag("customer_my_projects_submit_btn")
+                    ) {
+                        Icon(Icons.Default.AssignmentTurnedIn, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Submit Your Project",
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+        }
+
+        if (customerProjects.isNotEmpty()) {
+            items(customerProjects, key = { "cust_proj_${it.id}" }) { project ->
+                CustomerProjectCard(
+                    project = project,
+                    onRequestRevision = { note -> onRequestProjectRevision(project, note) },
+                    onConfirmCompletion = { onConfirmProjectCompletion(project) },
+                    onMessageProvider = { onMessageProjectProvider(project) }
+                )
             }
         }
 
@@ -549,6 +634,7 @@ fun ProviderDashboardScreen(
     profile: UserProfile?,
     myServices: List<ServiceListing>,
     providerBookings: List<BookingRequest>,
+    providerProjects: List<ProjectSubmission> = emptyList(),
     reviews: List<ServiceReview>,
     providerPayments: List<PaymentRecord> = emptyList(),
     notifications: List<AppNotification> = emptyList(),
@@ -557,6 +643,9 @@ fun ProviderDashboardScreen(
     onDeleteService: (String) -> Unit,
     onProviderBookingAction: (BookingRequest, newStatus: String, note: String) -> Unit,
     onContactCustomer: (BookingRequest) -> Unit,
+    onUpdateProjectStatus: (ProjectSubmission, String, String) -> Unit = { _, _, _ -> },
+    onDeliverProjectWork: (ProjectSubmission, String, List<ProjectAttachmentMeta>) -> Unit = { _, _, _ -> },
+    onMessageProjectCustomer: (ProjectSubmission) -> Unit = {},
     onOpenVerification: () -> Unit,
     onOpenSubscriptions: () -> Unit,
     onOpenOnboardingWizard: () -> Unit = {},
@@ -586,27 +675,28 @@ fun ProviderDashboardScreen(
     var payoutUpiId by remember { mutableStateOf("provider@upi") }
     var showProviderLogoutConfirm by remember { mutableStateOf(false) }
 
-    // All 19 Provider Workspace Sections
+    // All 20 Provider Workspace Sections (including Customer Project Submissions)
     val providerSections = listOf(
         "overview" to "1. Overview",
-        "public_profile" to "2. My Public Profile",
-        "verification" to "3. Verification Status",
-        "my_services" to "4. My Services (${myServices.size})",
-        "add_service" to "5. Add New Service",
-        "edit_services" to "6. Edit Services",
-        "enquiries" to "7. Customer Enquiries ($newEnquiries)",
-        "bookings" to "8. Booking Requests ($totalRequests)",
-        "calendar" to "9. Booking Calendar",
-        "messages" to "10. Messages",
-        "portfolio" to "11. Portfolio Manager",
-        "reviews" to "12. Reviews & Ratings (${myReviews.size})",
-        "analytics" to "13. Profile Analytics",
-        "earnings" to "14. Earnings & Payments",
-        "payouts" to "15. Payouts",
-        "subscriptions" to "16. Subscription Plans",
-        "notifications" to "17. Notifications (${notifications.size})",
-        "support" to "18. Help & Support",
-        "settings" to "19. Account Settings"
+        "projects" to "2. Received Projects (${providerProjects.size})",
+        "public_profile" to "3. My Public Profile",
+        "verification" to "4. Verification Status",
+        "my_services" to "5. My Services (${myServices.size})",
+        "add_service" to "6. Add New Service",
+        "edit_services" to "7. Edit Services",
+        "enquiries" to "8. Customer Enquiries ($newEnquiries)",
+        "bookings" to "9. Booking Requests ($totalRequests)",
+        "calendar" to "10. Booking Calendar",
+        "messages" to "11. Messages",
+        "portfolio" to "12. Portfolio Manager",
+        "reviews" to "13. Reviews & Ratings (${myReviews.size})",
+        "analytics" to "14. Profile Analytics",
+        "earnings" to "15. Earnings & Payments",
+        "payouts" to "16. Payouts",
+        "subscriptions" to "17. Subscription Plans",
+        "notifications" to "18. Notifications (${notifications.size})",
+        "support" to "19. Help & Support",
+        "settings" to "20. Account Settings"
     )
 
     LazyColumn(
@@ -700,14 +790,21 @@ fun ProviderDashboardScreen(
                                 }
                             }
                         }
+                        Spacer(modifier = Modifier.width(8.dp))
                         Button(
                             onClick = onAddNewService,
                             colors = ButtonDefaults.buttonColors(containerColor = SkillBlue),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
                             modifier = Modifier.testTag("provider_add_service_button")
                         ) {
-                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Add Service")
+                            Text(
+                                text = "Add Service",
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
                     }
 
@@ -762,7 +859,7 @@ fun ProviderDashboardScreen(
             }
         }
 
-        // 7-Point Profile Completion Checklist Card
+        // 7-Point Profile Completion Checklist Card (Fixed Responsive Layout — No Vertical Text Wrapping)
         item {
             Surface(
                 color = MaterialTheme.colorScheme.surface,
@@ -771,44 +868,90 @@ fun ProviderDashboardScreen(
                     .fillMaxWidth()
                     .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(16.dp))
             ) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "Profile Completion Checklist ($completionPct%)",
+                            text = "Profile Completion Checklist",
                             style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.weight(1f)
                         )
-                        TextButton(onClick = onOpenOnboardingWizard) {
-                            Text("Complete in Wizard →")
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Surface(
+                            color = if (completionPct == 100) SkillSuccessGreen.copy(alpha = 0.15f) else SkillBlue.copy(alpha = 0.14f),
+                            shape = RoundedCornerShape(50)
+                        ) {
+                            Text(
+                                text = "$completionPct%",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = if (completionPct == 100) SkillSuccessGreen else SkillBlue,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                                maxLines = 1,
+                                softWrap = false
+                            )
                         }
                     }
+
                     LinearProgressIndicator(
                         progress = { completionPct / 100f },
                         color = if (completionPct == 100) SkillSuccessGreen else SkillBlue,
+                        trackColor = MaterialTheme.colorScheme.surfaceVariant,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(8.dp)
                             .clip(RoundedCornerShape(50))
                     )
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
+
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         checklist.forEach { (label, done) ->
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
                                 Icon(
                                     imageVector = Icons.Default.CheckCircle,
                                     contentDescription = null,
                                     tint = if (done) SkillSuccessGreen else SkillWarningAmber,
-                                    modifier = Modifier.size(15.dp)
+                                    modifier = Modifier.size(18.dp)
                                 )
-                                Text(label, style = MaterialTheme.typography.labelSmall)
+                                Text(
+                                    text = label,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = if (done) FontWeight.SemiBold else FontWeight.Normal,
+                                    modifier = Modifier.weight(1f)
+                                )
                             }
                         }
+                    }
+
+                    OutlinedButton(
+                        onClick = onOpenOnboardingWizard,
+                        shape = RoundedCornerShape(12.dp),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(46.dp)
+                            .testTag("complete_in_wizard_btn")
+                    ) {
+                        Text(
+                            text = "Complete in Wizard →",
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
                 }
             }
@@ -829,6 +972,53 @@ fun ProviderDashboardScreen(
         }
 
         when (activeSection) {
+            "projects" -> {
+                item {
+                    Text(
+                        text = "Received Customer Projects (${providerProjects.size})",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "Review project requirements, preview or download customer reference files, accept/reject requests, and upload final completed deliverables.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                if (providerProjects.isEmpty()) {
+                    item {
+                        Surface(
+                            color = MaterialTheme.colorScheme.surface,
+                            shape = RoundedCornerShape(14.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(14.dp))
+                        ) {
+                            Text(
+                                text = "No customer project submissions received yet. When customers click 'Submit Your Project' on your profile or services, their project briefs and attached files will appear here.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(16.dp)
+                            )
+                        }
+                    }
+                } else {
+                    items(providerProjects, key = { "prov_proj_sec_${it.id}" }) { proj ->
+                        ProviderProjectCard(
+                            project = proj,
+                            providerUid = profile?.userId.orEmpty(),
+                            onUpdateStatus = { newStatus, responseMsg ->
+                                onUpdateProjectStatus(proj, newStatus, responseMsg)
+                            },
+                            onDeliverWork = { notes, files ->
+                                onDeliverProjectWork(proj, notes, files)
+                            },
+                            onMessageCustomer = { onMessageProjectCustomer(proj) }
+                        )
+                    }
+                }
+            }
+
             "calendar" -> {
                 item {
                     Text("Booking Calendar & Availability Schedule", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
@@ -1059,6 +1249,50 @@ fun ProviderDashboardScreen(
                                 }
                             }
                         }
+                    }
+                }
+
+                // Received Customer Projects in Overview
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Received Customer Projects (${providerProjects.size})",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        if (providerProjects.isNotEmpty()) {
+                            TextButton(onClick = { activeSection = "projects" }) {
+                                Text("View All", maxLines = 1, softWrap = false)
+                            }
+                        }
+                    }
+                }
+
+                if (providerProjects.isEmpty()) {
+                    item {
+                        Text(
+                            text = "No customer project submissions received yet.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                } else {
+                    items(providerProjects.take(4), key = { "prov_proj_ov_${it.id}" }) { proj ->
+                        ProviderProjectCard(
+                            project = proj,
+                            providerUid = profile?.userId.orEmpty(),
+                            onUpdateStatus = { newStatus, responseMsg ->
+                                onUpdateProjectStatus(proj, newStatus, responseMsg)
+                            },
+                            onDeliverWork = { notes, files ->
+                                onDeliverProjectWork(proj, notes, files)
+                            },
+                            onMessageCustomer = { onMessageProjectCustomer(proj) }
+                        )
                     }
                 }
 

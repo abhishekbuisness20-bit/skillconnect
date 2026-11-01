@@ -1,3 +1,24 @@
 <resources>
     <string name="app_name">SkillConnect</string>
+    <string name="offline_banner_message_en">No internet connection. Active network access is required for SkillConnect verification.</string>
+    <string name="offline_banner_message_hi">इंटरनेट कनेक्शन नहीं है। SkillConnect सत्यापन के लिए सक्रिय नेटवर्क आवश्यक है।</string>
+    <string name="offline_banner_retry_en">Retry</string>
+    <string name="offline_banner_retry_hi">पुनः प्रयास</string>
+    <string name="offline_banner_settings_en">Settings</string>
+    <string name="offline_banner_settings_hi">सेटिंग्स</string>
+    <string name="back_online_banner_message_en">Back online — SkillConnect verification &amp; live sync restored.</string>
+    <string name="back_online_banner_message_hi">वापस ऑनलाइन — SkillConnect सत्यापन और लाइव सिंक बहाल हो गया है।</string>
+    <string name="cd_offline_status_icon">Offline connection indicator</string>
+    <string name="cd_online_status_icon">Connection restored indicator</string>
+    <string name="cd_retry_connection">Retry network connection check</string>
+    <string name="cd_network_settings">Open device network settings</string>
+    <string name="marketplace_top_search_placeholder_en">Search providers or local services by name or category...</string>
+    <string name="marketplace_top_search_placeholder_hi">नाम या श्रेणी से सर्विस प्रोवाइडर या लोकल सेवाएं खोजें...</string>
+    <string name="marketplace_search_scope_all_en">All</string>
+    <string name="marketplace_search_scope_all_hi">सभी</string>
+    <string name="marketplace_search_scope_services_en">Local Services</string>
+    <string name="marketplace_search_scope_services_hi">लोकल सेवाएं</string>
+    <string name="marketplace_search_scope_providers_en">Service Providers</string>
+    <string name="marketplace_search_scope_providers_hi">सर्विस प्रोवाइडर</string>
+    <string name="cd_clear_marketplace_search">Clear marketplace search query</string>
 </resources>

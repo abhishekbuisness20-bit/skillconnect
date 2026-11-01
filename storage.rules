@@ -1,0 +1,63 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Global Zero-Trust Default Deny
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAuthorizedAdminEmail() {
+      return isSignedIn() &&
+             request.auth.token.email_verified == true &&
+             ('email' in request.auth.token && request.auth.token.email is string) &&
+             request.auth.token.email.lower() in [
+               'abhishek.buisness20@gmail.com',
+               'abhishekbuisness20@gmail.com',
+               'abhayskillconnect@gmail.com',
+               'abhayskillconnect39@gmail.com'
+             ];
+    }
+
+    function isAllowedUploadContentType() {
+      return request.resource != null &&
+             request.resource.contentType != null &&
+             (request.resource.contentType.matches('image/(jpeg|png|webp)') ||
+              request.resource.contentType == 'application/pdf');
+    }
+
+    function isWithinSizeLimit(maxBytes) {
+      return request.resource != null &&
+             request.resource.size > 0 &&
+             request.resource.size <= maxBytes;
+    }
+
+    // 1. User Profile Avatars & Portfolio Media (/users/{userId}/{allPaths=**})
+    // Strict owner write, max 5 MB, JPEG/PNG/WebP/PDF only
+    match /users/{userId}/{allPaths=**} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn() &&
+                               request.auth.uid == userId &&
+                               isWithinSizeLimit(5 * 1024 * 1024) &&
+                               isAllowedUploadContentType();
+      allow delete: if isSignedIn() && (request.auth.uid == userId || isAuthorizedAdminEmail());
+    }
+
+    // 2. Project Attachments (/projects/{projectId}/{userId}/{fileName})
+    // Authenticated participant upload, max 5 MB, JPEG/PNG/WebP/PDF only
+    match /projects/{projectId}/{userId}/{fileName} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn() &&
+                               request.auth.uid == userId &&
+                               fileName.size() >= 1 &&
+                               fileName.size() <= 140 &&
+                               !fileName.matches('.*\\.\\..*') &&
+                               isWithinSizeLimit(5 * 1024 * 1024) &&
+                               isAllowedUploadContentType();
+      allow delete: if isSignedIn() && (request.auth.uid == userId || isAuthorizedAdminEmail());
+    }
+  }
+}

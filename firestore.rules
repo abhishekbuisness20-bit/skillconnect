@@ -32,42 +32,82 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/admins/$(request.auth.uid)).data;
     }
 
-    function isFounderEmail() {
+    function authEmailLower() {
+      return ('email' in request.auth.token && request.auth.token.email is string)
+        ? request.auth.token.email.lower()
+        : '';
+    }
+
+    function hasVerifiedAuthEmail() {
       return isSignedIn() &&
-             'email' in request.auth.token &&
-             request.auth.token.email == 'abhishekbuisness20@gmail.com' &&
+             'email_verified' in request.auth.token &&
              request.auth.token.email_verified == true;
     }
 
+    function isFounderEmail() {
+      return hasVerifiedAuthEmail() &&
+             authEmailLower() in ['abhishek.buisness20@gmail.com', 'abhishekbuisness20@gmail.com'];
+    }
+
+    function isCoFounderEmail() {
+      return hasVerifiedAuthEmail() &&
+             authEmailLower() == 'abhayskillconnect@gmail.com';
+    }
+
+    function isCeoEmail() {
+      return hasVerifiedAuthEmail() &&
+             authEmailLower() == 'abhayskillconnect39@gmail.com';
+    }
+
+    function isAuthorizedAdminEmail() {
+      return isFounderEmail() || isCoFounderEmail() || isCeoEmail();
+    }
+
     function isActiveAdminRole(targetRole) {
+      let doc = adminDoc();
       return hasAdminDoc() &&
-             adminDoc().adminRole == targetRole &&
-             (targetRole == 'founder' || (adminDoc().sessionExpiresAt is timestamp && adminDoc().sessionExpiresAt >= request.time));
+             doc.adminRole == targetRole &&
+             (targetRole in ['founder', 'cofounder'] || (doc.sessionExpiresAt is timestamp && doc.sessionExpiresAt >= request.time));
     }
 
     function isFounder() {
-      return isFounderEmail() || isActiveAdminRole('founder');
-    }
-
-    function isCeo() {
-      return isActiveAdminRole('ceo');
+      return isFounderEmail() ||
+             (isSignedIn() && 'adminRole' in request.auth.token && request.auth.token.adminRole == 'founder') ||
+             isActiveAdminRole('founder');
     }
 
     function isCoFounder() {
-      return isActiveAdminRole('cofounder');
+      return isCoFounderEmail() ||
+             (isSignedIn() && 'adminRole' in request.auth.token && request.auth.token.adminRole == 'cofounder') ||
+             isActiveAdminRole('cofounder');
+    }
+
+    // Founder-level Admin Access Group (shared by Founder and Co-Founder)
+    function isFounderGroup() {
+      return isFounderEmail() ||
+             isCoFounderEmail() ||
+             (isSignedIn() && 'adminRole' in request.auth.token && request.auth.token.adminRole in ['founder', 'cofounder']) ||
+             (hasAdminDoc() && adminDoc().adminRole in ['founder', 'cofounder']);
+    }
+
+    function isCeo() {
+      return isCeoEmail() ||
+             (isSignedIn() && 'adminRole' in request.auth.token && request.auth.token.adminRole == 'ceo') ||
+             isActiveAdminRole('ceo');
     }
 
     function isCeoOrFounder() {
-      return isFounder() || isCeo();
+      return isAnyAdmin();
     }
 
     function isAnyAdmin() {
-      return isFounderEmail() || (
+      let doc = adminDoc();
+      return isAuthorizedAdminEmail() || (
         hasAdminDoc() && (
-          adminDoc().adminRole == 'founder' ||
-          (adminDoc().adminRole in ['ceo', 'cofounder'] &&
-           adminDoc().sessionExpiresAt is timestamp &&
-           adminDoc().sessionExpiresAt >= request.time)
+          doc.adminRole in ['founder', 'cofounder'] ||
+          (doc.adminRole == 'ceo' &&
+           doc.sessionExpiresAt is timestamp &&
+           doc.sessionExpiresAt >= request.time)
         )
       );
     }
@@ -124,22 +164,17 @@ service cloud.firestore {
                 'publicListingConsent', 'verificationRejectionReason', 'emailVerified', 'phoneVerified'
               ]) &&
               isValidUserProfile(incoming())) ||
-             // Cross-user rating aggregation after completed booking review
+             // Cross-user rating aggregation after completed booking review (bounded +1 review, +1..+5 rating delta)
              (incoming().isVerified == existing().isVerified &&
               incoming().accountStatus == existing().accountStatus &&
               incoming().role == existing().role &&
-              incoming().ratingSum is int && incoming().ratingSum >= 0 &&
-              incoming().reviewCount is int && incoming().reviewCount >= 0 &&
+              incoming().ratingSum is int &&
+              incoming().reviewCount is int &&
+              incoming().reviewCount == existing().reviewCount + 1 &&
+              incoming().ratingSum >= existing().ratingSum + 1 &&
+              incoming().ratingSum <= existing().ratingSum + 5 &&
               incoming().updatedAt is timestamp &&
               changed.hasOnly(['ratingSum', 'reviewCount', 'updatedAt'])) ||
-             // Co-Founder: Verification queue approval/rejection only (cannot alter role or suspend account)
-             (isCoFounder() &&
-              incoming().role == existing().role &&
-              incoming().accountStatus == existing().accountStatus &&
-              changed.hasOnly([
-                'isVerified', 'verificationStatus', 'isPublicProvider',
-                'verificationRejectionReason', 'updatedAt'
-              ])) ||
              // CEO: Verification, operational suspension, and subscription management (cannot alter role)
              (isCeo() &&
               incoming().role == existing().role &&
@@ -148,8 +183,8 @@ service cloud.firestore {
                 'isPublicProvider', 'verificationRejectionReason', 'completedJobsCount',
                 'ratingSum', 'reviewCount', 'updatedAt'
               ])) ||
-             // Founder: Full user profile & role administration
-             (isFounder() &&
+             // Founder-level Admin Access Group (Founder & Co-Founder): Full user profile & role administration
+             (isFounderGroup() &&
               changed.hasOnly([
                 'role', 'isVerified', 'verificationStatus', 'accountStatus', 'subscriptionPlan',
                 'isPublicProvider', 'verificationRejectionReason', 'completedJobsCount',
@@ -231,32 +266,27 @@ service cloud.firestore {
                 'draft', 'pending', 'awaiting_payment', 'confirmed',
                 'cancelled', 'disputed', 'completed', 'refund_pending'
               ] &&
+              (!('paymentStatus' in incoming()) || incoming().paymentStatus != 'refunded') &&
               changed.hasOnly([
                 'requirements', 'preferredDate', 'preferredTimeSlot', 'attachmentNote',
                 'status', 'statusNote', 'hasReviewed', 'paymentMethod', 'paymentStatus',
-                'paymentReferenceId', 'platformFeeInr', 'totalAmountInr', 'updatedAt'
+                'paymentReferenceId', 'updatedAt'
               ])) ||
              (request.auth.uid == existing().providerId &&
               existing().status in ['pending', 'accepted', 'awaiting_payment', 'confirmed', 'in_progress', 'disputed'] &&
               incoming().status in ['accepted', 'declined', 'awaiting_payment', 'confirmed', 'in_progress', 'completed', 'disputed'] &&
+              (!('paymentStatus' in incoming()) || incoming().paymentStatus != 'refunded') &&
+              (!('totalAmountInr' in incoming()) || incoming().totalAmountInr >= incoming().quotedPrice) &&
               changed.hasOnly([
                 'quotedPrice', 'status', 'statusNote', 'paymentStatus', 'totalAmountInr', 'updatedAt'
               ])) ||
-             // Co-Founder can only flag a booking as disputed (no refund execution)
-             (isCoFounder() &&
-              incoming().status == 'disputed' &&
-              changed.hasOnly(['status', 'statusNote', 'updatedAt'])) ||
-             // CEO can approve refunds up to ₹10,000 INR or update non-refund dispute status
-             (isCeo() &&
-              (incoming().status != 'refunded' || effectiveAmount <= 10000) &&
-              changed.hasOnly([
+             // Executive Admin dispute/refund handling (CEO <= ₹10,000 INR; Founder-level Access Group unlimited)
+             (changed.hasOnly([
                 'status', 'statusNote', 'paymentStatus', 'paymentReferenceId', 'updatedAt'
-              ])) ||
-             // Founder has unlimited refund approval authority
-             (isFounder() &&
-              changed.hasOnly([
-                'status', 'statusNote', 'paymentStatus', 'paymentReferenceId', 'updatedAt'
-              ]));
+              ]) && (
+                isFounderGroup() ||
+                (isCeo() && (incoming().status != 'refunded' || effectiveAmount <= 10000))
+              ));
     }
 
     function isValidConversation(data) {
@@ -294,7 +324,8 @@ service cloud.firestore {
              data.type in [
                'new_enquiry', 'booking_accepted', 'booking_declined', 'status_changed',
                'new_message', 'review_reminder', 'verification_update', 'registration_complete',
-               'profile_saved', 'payment_update', 'refund_update', 'support_update', 'dispute_update'
+               'profile_saved', 'payment_update', 'refund_update', 'support_update', 'dispute_update',
+               'project_submitted', 'project_status_update', 'project_delivered', 'project_revision', 'project_completed'
              ] &&
              data.relatedId is string && data.relatedId.size() <= 128 &&
              data.isRead is bool &&
@@ -402,9 +433,14 @@ service cloud.firestore {
              data.adminRole is string && data.adminRole in ['cofounder', 'ceo', 'founder'] &&
              data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 60 &&
              data.username is string && data.username.size() >= 2 && data.username.size() <= 60 &&
-             // Never allow plaintext passwords: passwordVerifierHash MUST be a 64-character hex SHA-256 hash
-             data.passwordVerifierHash is string && data.passwordVerifierHash.size() == 64 &&
-             data.passwordVerifierHash.matches('^[a-fA-F0-9]{64}$') &&
+             (!('adminEmail' in data) || (data.adminEmail is string && data.adminEmail.size() <= 120)) &&
+             (!('accessGroup' in data) || (data.accessGroup is string && data.accessGroup in ['founder_admin_group', 'ceo_dashboard_group'])) &&
+             (!('permissions' in data) || (data.permissions is list && data.permissions.size() <= 20)) &&
+             // Never allow plaintext passwords: passwordVerifierHash MUST be a 64-char hex digest or scrypt$/pbkdf2$ key-stretched hash
+             data.passwordVerifierHash is string &&
+             data.passwordVerifierHash.size() >= 64 &&
+             data.passwordVerifierHash.size() <= 256 &&
+             data.passwordVerifierHash.matches('^([a-fA-F0-9]{64}|(scrypt|pbkdf2)\\$[a-zA-Z0-9$_\\-]{64,220})$') &&
              data.passwordSalt is string && data.passwordSalt.size() >= 8 && data.passwordSalt.size() <= 64 &&
              data.mustChangePassword is bool &&
              data.failedAttempts is int && data.failedAttempts >= 0 && data.failedAttempts <= 100 &&
@@ -463,6 +499,39 @@ service cloud.firestore {
              data.createdAt is timestamp && data.createdAt <= request.time;
     }
 
+    function isValidProjectSubmission(data) {
+      return data.customerId is string && data.customerId.size() >= 1 && data.customerId.size() <= 128 &&
+             data.providerId is string && data.providerId.size() >= 1 && data.providerId.size() <= 128 &&
+             data.title is string && data.title.size() >= 2 && data.title.size() <= 160 &&
+             data.description is string && data.description.size() >= 5 && data.description.size() <= 4000 &&
+             data.status is string && data.status in [
+               'new_request', 'under_review', 'accepted', 'in_progress',
+               'work_submitted', 'revision_requested', 'completed', 'rejected'
+             ] &&
+             (!('projectId' in data) || (data.projectId is string && data.projectId.size() <= 128)) &&
+             (!('projectRef' in data) || (data.projectRef is string && data.projectRef.size() <= 40)) &&
+             (!('customerName' in data) || (data.customerName is string && data.customerName.size() <= 80)) &&
+             (!('customerEmail' in data) || (data.customerEmail is string && data.customerEmail.size() <= 120)) &&
+             (!('customerPhone' in data) || (data.customerPhone is string && data.customerPhone.size() <= 24)) &&
+             (!('providerName' in data) || (data.providerName is string && data.providerName.size() <= 80)) &&
+             (!('serviceId' in data) || (data.serviceId is string && data.serviceId.size() <= 128)) &&
+             (!('serviceTitle' in data) || (data.serviceTitle is string && data.serviceTitle.size() <= 160)) &&
+             (!('category' in data) || (data.category is string && data.category.size() <= 80)) &&
+             (!('requirements' in data) || (data.requirements is string && data.requirements.size() <= 3000)) &&
+             (!('budget' in data) || (data.budget is int && data.budget >= 0 && data.budget <= 100000000)) &&
+             (!('expectedDeliveryDate' in data) || (data.expectedDeliveryDate is string && data.expectedDeliveryDate.size() <= 80)) &&
+             (!('additionalInstructions' in data) || (data.additionalInstructions is string && data.additionalInstructions.size() <= 2000)) &&
+             (!('attachments' in data) || (data.attachments is string && data.attachments.size() <= 6000)) &&
+             (!('deliveryFiles' in data) || (data.deliveryFiles is string && data.deliveryFiles.size() <= 6000)) &&
+             (!('deliveryNotes' in data) || (data.deliveryNotes is string && data.deliveryNotes.size() <= 2500)) &&
+             (!('providerResponse' in data) || (data.providerResponse is string && data.providerResponse.size() <= 2000)) &&
+             (!('revisionRequests' in data) || (data.revisionRequests is string && data.revisionRequests.size() <= 4500)) &&
+             (!('conversationId' in data) || (data.conversationId is string && data.conversationId.size() <= 128)) &&
+             (!('createdAt' in data) || (data.createdAt is timestamp && data.createdAt <= request.time)) &&
+             (!('updatedAt' in data) || (data.updatedAt is timestamp && data.updatedAt <= request.time)) &&
+             (!('completedAt' in data) || data.completedAt == null || (data.completedAt is timestamp && data.completedAt <= request.time));
+    }
+
     // Collection 1: User Profiles
     match /user_profiles/{userId} {
       allow get: if isSignedIn() && isValidId(userId) && (
@@ -514,7 +583,7 @@ service cloud.firestore {
                        incoming().createdAt == existing().createdAt &&
                        canUpdateUserProfile(userId);
 
-      allow delete: if isSignedIn() && isValidId(userId) && (request.auth.uid == userId || isFounder());
+      allow delete: if isSignedIn() && isValidId(userId) && (request.auth.uid == userId || isFounderGroup());
     }
 
     // Collection 2: Services
@@ -537,6 +606,7 @@ service cloud.firestore {
                        incoming().providerId == request.auth.uid &&
                        incoming().ratingSum == 0 &&
                        incoming().reviewCount == 0 &&
+                       (incoming().isFeatured == false || isAnyAdmin()) &&
                        incoming().keys().hasAll([
                          'providerId', 'providerName', 'providerVerified', 'title', 'category',
                          'subcategory', 'shortSummary', 'description', 'skills', 'startingPrice',
@@ -561,14 +631,21 @@ service cloud.firestore {
                        incoming().createdAt == existing().createdAt && (
                          (request.auth.uid == existing().providerId &&
                           isValidService(incoming()) &&
+                          (incoming().isFeatured == existing().isFeatured || isAnyAdmin()) &&
+                          (incoming().moderationStatus == existing().moderationStatus || isAnyAdmin()) &&
+                          incoming().ratingSum == existing().ratingSum &&
+                          incoming().reviewCount == existing().reviewCount &&
                           incoming().diff(existing()).affectedKeys().hasOnly([
                             'providerName', 'providerVerified', 'title', 'category', 'subcategory',
                             'shortSummary', 'description', 'skills', 'startingPrice', 'pricingModel',
                             'deliverables', 'turnaround', 'city', 'locality', 'availability', 'terms',
-                            'isPublished', 'isDraft', 'isFeatured', 'ratingSum', 'reviewCount', 'updatedAt'
+                            'isPublished', 'isDraft', 'updatedAt'
                           ])) ||
-                         (incoming().ratingSum is int && incoming().ratingSum >= 0 &&
-                          incoming().reviewCount is int && incoming().reviewCount >= 0 &&
+                         (incoming().ratingSum is int &&
+                          incoming().reviewCount is int &&
+                          incoming().reviewCount == existing().reviewCount + 1 &&
+                          incoming().ratingSum >= existing().ratingSum + 1 &&
+                          incoming().ratingSum <= existing().ratingSum + 5 &&
                           incoming().updatedAt is timestamp &&
                           incoming().diff(existing()).affectedKeys().hasOnly(['ratingSum', 'reviewCount', 'updatedAt'])) ||
                          (isAnyAdmin() &&
@@ -630,7 +707,7 @@ service cloud.firestore {
 
       allow delete: if isSignedIn() && isValidId(bookingId) && (
         (resource.data.customerId == request.auth.uid && resource.data.status == 'draft') ||
-        isFounder()
+        isFounderGroup()
       );
     }
 
@@ -755,7 +832,7 @@ service cloud.firestore {
                        incoming().diff(existing()).affectedKeys().hasOnly(['isRead', 'updatedAt']);
 
       allow delete: if isSignedIn() && isValidId(notificationId) && (
-        resource.data.userId == request.auth.uid || isFounder()
+        resource.data.userId == request.auth.uid || isFounderGroup()
       );
     }
 
@@ -808,7 +885,7 @@ service cloud.firestore {
                           incoming().diff(existing()).affectedKeys().hasOnly(['isReported', 'moderationStatus', 'updatedAt']))
                        );
 
-      allow delete: if isFounder() && isValidId(bookingId);
+      allow delete: if isFounderGroup() && isValidId(bookingId);
     }
 
     // Collection 8: User Favourites Subcollection
@@ -880,7 +957,7 @@ service cloud.firestore {
                           ]))
                        );
 
-      allow delete: if isSignedIn() && isValidId(userId) && (request.auth.uid == userId || isFounder());
+      allow delete: if isSignedIn() && isValidId(userId) && (request.auth.uid == userId || isFounderGroup());
     }
 
     // Collection 10: Safety Reports
@@ -917,7 +994,7 @@ service cloud.firestore {
                          'status', 'adminResolution', 'updatedAt'
                        ]);
 
-      allow delete: if isFounder() && isValidId(reportId);
+      allow delete: if isFounderGroup() && isValidId(reportId);
     }
 
     // Collection 11: Support Tickets
@@ -952,7 +1029,7 @@ service cloud.firestore {
                        incoming().createdAt == existing().createdAt &&
                        incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']);
 
-      allow delete: if isFounder() && isValidId(ticketId);
+      allow delete: if isFounderGroup() && isValidId(ticketId);
     }
 
     // Collection 12: Platform Settings (CEO operational settings; Founder full emergency/security controls; Co-Founder denied write)
@@ -981,8 +1058,8 @@ service cloud.firestore {
                             'announcementText', 'announcementActive', 'freeListingLimit',
                             'premiumPriceInr', 'billingPeriod', 'paymentsDemoMode', 'updatedBy', 'updatedAt'
                           ])) ||
-                         // Founder can update all platform settings including maintenanceMode and sessionTimeoutMinutes
-                         (isFounder() &&
+                         // Founder-level Admin Access Group (Founder & Co-Founder) can update all platform settings
+                         (isFounderGroup() &&
                           incoming().diff(existing()).affectedKeys().hasOnly([
                             'announcementText', 'announcementActive', 'freeListingLimit',
                             'premiumPriceInr', 'billingPeriod', 'paymentsDemoMode',
@@ -996,15 +1073,17 @@ service cloud.firestore {
     // Collection 13: Tiered Executive Admin Registry (/admins/{adminUid})
     match /admins/{adminUid} {
       allow get: if isSignedIn() && isValidId(adminUid) && (
-        request.auth.uid == adminUid || isFounder() || isCeo()
+        request.auth.uid == adminUid || isFounderGroup() || isCeo()
       );
 
-      allow list: if isFounder() || isCeo();
+      allow list: if isFounderGroup() || isCeo();
 
       // Secure provisioning of the 3 distinct executive admin accounts with salted SHA-256 verifier hash
+      // Strictly restricted to the 3 authorized Admin emails unless explicitly provisioned by the Founder
       allow create: if isSignedIn() &&
                        isValidId(adminUid) &&
                        (request.auth.uid == adminUid || isFounder()) &&
+                       (!('email' in request.auth.token) || isAuthorizedAdminEmail() || isFounder()) &&
                        incoming().keys().hasAll([
                          'adminUid', 'canonicalAccountId', 'adminRole', 'displayName', 'username',
                          'passwordVerifierHash', 'passwordSalt', 'mustChangePassword', 'failedAttempts',
@@ -1013,6 +1092,7 @@ service cloud.firestore {
                        ]) &&
                        incoming().keys().hasOnly([
                          'adminUid', 'canonicalAccountId', 'adminRole', 'displayName', 'username',
+                         'adminEmail', 'accessGroup', 'permissions',
                          'passwordVerifierHash', 'passwordSalt', 'mustChangePassword', 'failedAttempts',
                          'lockedUntilEpochMs', 'founderSessionPersistent', 'sessionExpiresAt',
                          'createdAt', 'updatedAt'
@@ -1020,17 +1100,19 @@ service cloud.firestore {
                        isValidAdminAccount(incoming(), adminUid);
 
       // Admin can refresh their own sessionExpiresAt or rotate password hash, but CANNOT self-escalate adminRole!
-      // Founder can manage any admin account or role.
+      // ONLY Founder can manage any admin account or role.
       allow update: if isSignedIn() &&
                        isValidId(adminUid) &&
                        isValidAdminAccount(incoming(), adminUid) &&
                        incoming().adminUid == existing().adminUid &&
                        incoming().createdAt == existing().createdAt && (
                          (request.auth.uid == adminUid &&
+                          (isAuthorizedAdminEmail() || hasAdminDoc()) &&
                           incoming().adminRole == existing().adminRole &&
                           incoming().canonicalAccountId == existing().canonicalAccountId &&
                           incoming().diff(existing()).affectedKeys().hasOnly([
-                            'username', 'passwordVerifierHash', 'passwordSalt', 'mustChangePassword',
+                            'username', 'adminEmail', 'accessGroup', 'permissions',
+                            'passwordVerifierHash', 'passwordSalt', 'mustChangePassword',
                             'failedAttempts', 'lockedUntilEpochMs', 'sessionExpiresAt', 'updatedAt'
                           ])) ||
                          isFounder()
@@ -1085,8 +1167,8 @@ service cloud.firestore {
                          (isCeo() &&
                           (incoming().status != 'refunded' || existing().amountInr <= 10000) &&
                           incoming().diff(existing()).affectedKeys().hasOnly(['status', 'transactionRef', 'notes', 'updatedAt'])) ||
-                         // Founder has unlimited financial & refund approval authority
-                         (isFounder() &&
+                         // Founder-level Admin Access Group (Founder & Co-Founder) has unlimited financial & refund approval authority
+                         (isFounderGroup() &&
                           incoming().diff(existing()).affectedKeys().hasOnly(['status', 'transactionRef', 'notes', 'updatedAt']))
                        );
 
@@ -1162,26 +1244,72 @@ service cloud.firestore {
                          (request.auth.uid == existing().providerId &&
                           incoming().status == existing().status &&
                           incoming().diff(existing()).affectedKeys().hasOnly(['providerStatement', 'evidenceNote', 'updatedAt'])) ||
-                         // Co-Founder can review and escalate to CEO or Founder, but CANNOT mark resolved_refunded
-                         (isCoFounder() &&
-                          incoming().status in ['under_review', 'escalated_to_ceo', 'escalated_to_founder'] &&
-                          incoming().diff(existing()).affectedKeys().hasOnly([
-                            'status', 'assignedRole', 'adminDecisionNote', 'decidedByAdminId', 'updatedAt'
-                          ])) ||
                          // CEO can resolve refunds up to ₹10,000 INR or escalate to Founder
                          (isCeo() &&
                           (incoming().status != 'resolved_refunded' || existing().disputedAmountInr <= 10000) &&
                           incoming().diff(existing()).affectedKeys().hasOnly([
                             'status', 'assignedRole', 'adminDecisionNote', 'decidedByAdminId', 'updatedAt'
                           ])) ||
-                         // Founder can resolve any dispute for any amount
-                         (isFounder() &&
+                         // Founder-level Admin Access Group (Founder & Co-Founder) can resolve any dispute for any amount
+                         (isFounderGroup() &&
                           incoming().diff(existing()).affectedKeys().hasOnly([
                             'status', 'assignedRole', 'adminDecisionNote', 'decidedByAdminId', 'updatedAt'
                           ]))
                        );
 
       allow delete: if false;
+    }
+
+    // Collection 17: Customer-to-Provider Project Submissions (/projects/{projectId})
+    match /projects/{projectId} {
+      allow get: if isSignedIn() && isValidId(projectId) && (
+        resource == null ||
+        resource.data.customerId == request.auth.uid ||
+        resource.data.providerId == request.auth.uid ||
+        isAnyAdmin()
+      );
+
+      allow list: if isSignedIn() && (
+        resource.data.customerId == request.auth.uid ||
+        resource.data.providerId == request.auth.uid ||
+        isAnyAdmin()
+      );
+
+      allow create: if isSignedIn() &&
+                       isValidId(projectId) &&
+                       incoming().customerId == request.auth.uid &&
+                       incoming().customerId != incoming().providerId &&
+                       incoming().keys().hasAll([
+                         'customerId', 'providerId', 'title', 'description', 'status'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'projectId', 'projectRef', 'customerId', 'customerName', 'customerEmail',
+                         'customerPhone', 'providerId', 'providerName', 'serviceId', 'serviceTitle',
+                         'category', 'title', 'description', 'requirements', 'budget',
+                         'expectedDeliveryDate', 'additionalInstructions', 'attachments',
+                         'deliveryFiles', 'deliveryNotes', 'status', 'providerResponse',
+                         'revisionRequests', 'conversationId', 'createdAt', 'updatedAt', 'completedAt'
+                       ]) &&
+                       isValidProjectSubmission(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(projectId) &&
+                       isValidProjectSubmission(incoming()) &&
+                       incoming().customerId == existing().customerId &&
+                       incoming().providerId == existing().providerId &&
+                       (!('createdAt' in existing()) || incoming().createdAt == existing().createdAt) &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'title', 'description', 'requirements', 'budget', 'expectedDeliveryDate',
+                         'additionalInstructions', 'attachments', 'deliveryFiles', 'deliveryNotes',
+                         'status', 'providerResponse', 'revisionRequests', 'conversationId',
+                         'updatedAt', 'completedAt'
+                       ]) && (
+                         request.auth.uid == existing().customerId ||
+                         request.auth.uid == existing().providerId ||
+                         isAnyAdmin()
+                       );
+
+      allow delete: if isAnyAdmin() && isValidId(projectId);
     }
   }
 }

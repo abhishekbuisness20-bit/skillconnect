@@ -1,45 +1,37 @@
-# Implementation Plan — Admin Security, Message Governance, Customer Logout, Blue Tick Verification & Full Admin Inspection
+# Firebase Project (`skillconnect-fc066`) & Firebase Analytics Integration Plan
 
-## 1. Objective
-Update SkillConnect to enforce a strict **3-attempt limit** on Administration login, restrict **message reading and deletion exclusively to Admins**, show **only self Booking notices and Login alerts** to Customers and Service Providers, add a prominent **Logout option on Customer Profile & Dashboard**, apply a **Blue Tick + "Verified by SkillConnect"** badge when an Admin approves a Service Provider profile, and allow **Admins to view the full details of any user**.
-
----
-
-## 2. Key Changes
-
-### A. Strict 3-Attempt Administration Login Limit (`AuthComponents.kt`, `SkillConnectRepository.kt`, `ProfileAdminSupportScreens.kt`)
-- Change the maximum Administration login attempts from `5` to **`3` attempts** across:
-  - Initial `SkillConnectAuthScreen` Executive Admin login (`AuthComponents.kt`)
-  - Backend Firestore verifier `authenticateOrBootstrapExecutiveAdmin` (`SkillConnectRepository.kt`)
-  - In-app `ProfileAndSettingsScreen` and `AdminDashboardScreen` Executive Admin login cards (`ProfileAdminSupportScreens.kt`)
-- Display live attempt counter feedback (`"Attempt X of 3 — Y attempts remaining"`) on failed attempts, and lock administrative login for **60 seconds** upon reaching 3 failed attempts. On success within 3 attempts, reset `failedAttempts` to `0`.
-
-### B. Admin-Only Message Read & Delete + Self-Only Booking & Login Notices for Customers/Providers (`SkillConnectRepository.kt`, `SkillConnectViewModel.kt`, `BookingsMessagesFavouritesScreens.kt`, `ProfileAdminSupportScreens.kt`, `firestore.rules`)
-- **Customers & Service Providers (`MessagesAndNotificationsScreen` & `ProfileAndSettingsScreen`)**:
-  - Show only the signed-in user's own (`userId == currentUserId`) **Booking Notices** and **Self Login / Account Security Alerts** (including a self-login session status card showing their own account, role, Platform ID, and active login status).
-  - Restrict direct message thread reading and deletion to Admins, displaying a clear notice to Customers and Providers that message transcripts are managed by Administration while all their personal Booking and Login notifications are shown in real time.
-- **Admins (`AdminDashboardScreen` & `MessagesAndNotificationsScreen`)**:
-  - Add a dedicated **Messages & Conversations (Admin Read & Delete)** section in `AdminDashboardScreen` and enable full Admin message inspection and **Delete Message / Delete Conversation** actions in `SkillConnectRepository.kt` (`observeAllConversationsForAdmin`, `observeAllMessagesForAdmin`, `adminDeleteMessage`, `adminDeleteConversation`).
-
-### C. Prominent Logout Option on Customer Profile & Customer Dashboard (`ProfileAdminSupportScreens.kt`, `DashboardsAndCreateServiceScreens.kt`, `MainActivity.kt`)
-- Ensure the **Customer Profile** (`ProfileAndSettingsScreen`) and **Customer Dashboard** (`CustomerDashboardScreen`) both display a prominent **Logout** button right below the Customer profile card (with a confirmation dialog that clears session state and returns directly to the initial login screen).
-
-### D. Admin Profile Approve Button -> Blue Tick & "Verified by SkillConnect" Badge (`SkillConnectRepository.kt`, `SkillConnectViewModel.kt`, `ProfileAdminSupportScreens.kt`, `ServiceAndProviderDetailScreens.kt`, `HomeAndExploreScreens.kt`, `DashboardsAndCreateServiceScreens.kt`)
-- When an Admin clicks **Approve Profile** on a Service Provider (available in `Verification Queue`, `Providers`, and `Users` tabs of `AdminDashboardScreen`):
-  - Update `user_profiles/{providerId}` with `isVerified = true`, `verificationStatus = "approved"`, `accountStatus = "active"`, and `isPublicProvider = true`.
-  - Also update all `services` documents belonging to that provider with `providerVerified = true` so every listing card immediately reflects the verified status.
-  - Render a prominent **Blue Tick icon (`Icons.Default.Verified` / `Icons.Default.VerifiedUser` in `SkillBlue`)** next to the Service Provider's name and a **"Verified by SkillConnect"** badge across:
-    - Provider Profile card (`ProfileAndSettingsScreen`)
-    - Provider Dashboard (`ProviderDashboardScreen`)
-    - Public Provider Profile & Service Detail screens (`ServiceAndProviderDetailScreens.kt`)
-    - Home & Provider Directory cards (`HomeAndExploreScreens.kt`)
-
-### E. Full User Details Inspection for Admins (`ProfileAdminSupportScreens.kt`)
-- Add a **"View Full Details"** button on every user, customer, and provider card in `AdminDashboardScreen` (`Users`, `Customers`, `Providers`, and `Verification Queue` tabs).
-- Tapping **View Full Details** opens a comprehensive **Admin Full User Inspection Dialog** displaying all profile fields, Platform ID (`SC-CUS-...` / `SC-PRO-...`), Role, Account & Verification Status, Blue Tick status, Contact Phone, State/City/Locality/PIN, Skills, Bio, Starting Price, Subscription Plan, Completed Jobs, Rating, Bookings history, Payments history, and direct **Approve Blue Tick ("Verified by SkillConnect")** / **Suspend / Reactivate** actions.
+## 1. Overview
+Configure SkillConnect to use the `skillconnect-fc066` Firebase project with provisioned Google Sign-In OAuth credentials and integrate the **Firebase Analytics SDK** (`com.google.firebase:firebase-analytics`) to track screen views, marketplace searches, and service bookings.
 
 ---
 
-## 3. Verification Plan
-1. Validate Firestore rules if updated and run `compile_applet` to ensure the project compiles with zero errors.
-2. Verify all 5 user requirements across Auth, Admin Portal, Customer/Provider Profiles, Notifications, and Provider Directory.
+## 2. Firebase Project & OAuth Provisioning (`skillconnect-fc066`)
+- **Certificate Fingerprint Extraction**: Extract the active `SHA-1` and `SHA-256` signing fingerprints from `debug.keystore` for package `com.aistudio.skillconnect.kxmprq`.
+- **Project Provisioning (`ProvisionFirebase`)**:
+  - Provision Firebase resources targeting `project_id: "skillconnect-fc066"` with `requested_products: ["firestore"]` so that `app/google-services.json` and `app/src/main/res/values/firebase_applet_config.xml` are populated with the registered Android `certificate_hash` and OAuth 2.0 Web/Android clients required by Jetpack Credential Manager (`GetSignInWithGoogleOption`).
+  - Verify that the `SHA-1` `certificate_hash` is present in `app/google-services.json` and deploy `firestore.rules` to the project.
+  - Clean up the temporary root `/google-services.json` file so the Android app module uses the authoritative `app/google-services.json`.
+
+---
+
+## 3. Gradle & Dependency Configuration
+- **Repositories & Google Services Plugin**:
+  - Verify `google()` Maven repository configuration in `settings.gradle.kts` and `alias(libs.plugins.google.services)` in both root `build.gradle.kts` and `app/build.gradle.kts`.
+- **Firebase Analytics SDK**:
+  - Add `firebase-analytics = { group = "com.google.firebase", name = "firebase-analytics" }` to `gradle/libs.versions.toml` (version-aligned automatically via the existing `firebase-bom`).
+  - Add `implementation(libs.firebase.analytics)` to `app/build.gradle.kts`.
+  - Add `ACCESS_NETWORK_STATE` and `WAKE_LOCK` permissions check in `AndroidManifest.xml` (standard install-time permissions used by Firebase Analytics) and ensure R8 rules in `app/proguard-rules.pro` preserve Firebase Analytics measurement classes.
+
+---
+
+## 4. Firebase Analytics Event Instrumentation
+- **Analytics Helper (`app/src/main/java/com/example/util/SkillConnectAnalytics.kt`)**:
+  - Create a lightweight, null-safe wrapper around `Firebase.analytics` (`FirebaseAnalytics`) that logs structured events without blocking the UI thread:
+    1. **Screen Views (`FirebaseAnalytics.Event.SCREEN_VIEW`)**:
+       - Automatically log active screen transitions in `MainActivity` (`Home`, `ExploreServices`, `ServiceDetail`, `BookService`, `MyBookings`, `ProviderRegistration`, `ProviderDashboard`, `Profile`, `Notifications`).
+    2. **Marketplace Searches (`FirebaseAnalytics.Event.SEARCH`)**:
+       - Log search queries (`FirebaseAnalytics.Param.SEARCH_TERM`) and active category filters when users search for service providers or local services from the Home or Explore marketplace search bars (debounced to avoid logging intermediate keystrokes).
+    3. **Service & Provider Selection (`FirebaseAnalytics.Event.SELECT_ITEM`)**:
+       - Log when a user selects a service card or verified provider profile (`item_id`, `item_name`, `item_category`).
+    4. **Service Bookings (`book_service` & `booking_status_updated`)**:
+       - Log booking creation in `SkillConnectViewModel` with service ID, service title, category, and price when a booking is confirmed, as well as booking status updates (accepted, completed, cancelled).

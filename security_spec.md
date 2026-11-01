@@ -24,3 +24,8 @@
 10. **PII Verification Leak**: User B attempts `get` on `/verification_submissions/{userA}`. -> REJECTED.
 11. **Admin Email Spoofing**: Attacker with `email == 'abhishekbuisness20@gmail.com'` but `email_verified == false` attempts admin moderation. -> REJECTED.
 12. **Value Poisoning / Denial of Wallet**: Attacker writes a 10,000-character string to `title` or 50 elements into `skills`. -> REJECTED by `isValid*()` size bounds.
+13. **Executive Admin RBAC & Session Expiry**: Only the 3 authorized emails (`abhishek.buisness20@gmail.com` / `abhishekbuisness20@gmail.com` as Founder, `abhayskillconnect@gmail.com` as Co-Founder in `founder_admin_group`, and `abhaySkillconnect39@gmail.com` as CEO in `ceo_dashboard_group` with 15-minute `sessionExpiresAt` and ₹10,000 INR refund limit) can hold `/admins/{uid}` documents or perform privileged moderation. Unauthorized Gmail accounts and plaintext passwords in `passwordHash` are rejected.
+14. **Bounded Rating Deltas**: Any update to `ratingSum` / `reviewCount` on `/user_profiles/{userId}` or `/services/{serviceId}` must increment `reviewCount` by exactly `+1` and `ratingSum` by `+1..+5`. Arbitrary rating inflation (+500 stars) is rejected.
+15. **Service Self-Featuring & Booking Refund State Lock**: Non-admin providers cannot create or update `/services/{serviceId}` with `isFeatured: true` or alter `moderationStatus`. Non-admin customers and providers cannot set `paymentStatus: 'refunded'` or tamper with `platformFeeInr` on `/booking_requests/{bookingId}`.
+16. **Project Submission Schema & Shadow Field Lock**: `/projects/{projectId}` enforces `isValidProjectSubmission()`, strict `hasOnly()` key whitelists, immutable `projectId`/`userId`/`createdAt`, and owner/assigned-freelancer/admin isolation.
+

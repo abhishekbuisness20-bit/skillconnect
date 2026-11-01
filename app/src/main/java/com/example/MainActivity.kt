@@ -116,11 +116,19 @@ import com.example.ui.AppDestination
 import com.example.ui.SkillConnectViewModel
 import com.example.ui.UiState
 import com.example.data.model.IndiaLocationDirectory
+import com.example.data.model.UserProfile
 import com.example.ui.components.AllIndiaLocationPickerDialog
+import com.example.ui.components.CustomerProjectSubmissionDialog
+import com.example.ui.components.NetworkConnectivityBanner
 import com.example.ui.components.SkillConnectAuthScreen
 import com.example.ui.components.SkillConnectBrandLogo
+import com.example.ui.components.SkillConnectSplashScreen
 import com.example.ui.components.attemptAutoSignIn
 import com.example.ui.components.performSignOut
+import com.example.util.rememberNetworkConnectivityState
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
+import kotlinx.coroutines.delay
 import com.example.ui.screens.AdminDashboardScreen
 import com.example.ui.screens.BookingsAndEnquiriesScreen
 import com.example.ui.screens.CreateEditServiceScreen
@@ -145,6 +153,7 @@ import com.example.ui.theme.SkillErrorRed
 import com.example.ui.theme.SkillNavy
 import com.example.ui.theme.SkillPurple
 import com.example.ui.theme.SkillSuccessGreen
+import com.example.util.configureAppCheck
 import com.google.firebase.Firebase
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
@@ -158,7 +167,12 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Configure Firebase App Check (Play Integrity in release, Debug provider in debug)
+        // before any UI, ViewModel, or Firebase operations.
+        configureAppCheck(this, intent)
         enableEdgeToEdge()
+        // Switch window background from splash drawable to pure white once Compose takes over
+        window.setBackgroundDrawableResource(android.R.color.white)
         setContent {
             SkillConnectRootApp()
         }
@@ -182,19 +196,31 @@ fun SkillConnectRootApp() {
 
     val auth = remember { Firebase.auth }
     val currentUser by auth.authStateFlow().collectAsStateWithLifecycle(initialValue = auth.currentUser)
+    var isSplashComplete by remember { mutableStateOf(false) }
 
-    // Attempt silent auto sign-in once on startup if unauthenticated
+    // Attempt silent auto sign-in once on startup while displaying the pure-white splash screen
     LaunchedEffect(Unit) {
+        val startTime = System.currentTimeMillis()
+        var authCheckDone = false
         if (auth.currentUser == null) {
             val credentialManager = CredentialManager.create(context)
             attemptAutoSignIn(
                 context = context,
                 credentialManager = credentialManager,
-                onAuthSuccess = {},
-                onUnauthenticated = {},
+                onAuthSuccess = { authCheckDone = true },
+                onUnauthenticated = { authCheckDone = true },
                 scope = scope
             )
+            // Wait up to 900ms for silent auto-sign-in or proceed smoothly
+            while (!authCheckDone && (System.currentTimeMillis() - startTime) < 900L) {
+                delay(50L)
+            }
         }
+        val elapsed = System.currentTimeMillis() - startTime
+        if (elapsed < 650L) {
+            delay(650L - elapsed)
+        }
+        isSplashComplete = true
     }
 
     val isHindi = prefs.language == "hi"
@@ -204,36 +230,44 @@ fun SkillConnectRootApp() {
         darkTheme = prefs.isDarkMode,
         isHindi = isHindi
     ) {
-        val user = currentUser
-        if (user == null) {
-            SkillConnectAuthScreen(
-                isDarkMode = prefs.isDarkMode,
-                isHindi = isHindi,
-                onToggleDarkMode = {
-                    scope.launch { prefsRepo.setDarkMode(!prefs.isDarkMode) }
-                },
-                onToggleLanguage = {
-                    scope.launch { prefsRepo.setLanguage(if (isHindi) "en" else "hi") }
-                },
-                onRoleSelectedBeforeAuth = { selectedRole ->
-                    scope.launch {
-                        prefsRepo.setPendingRegistrationRole(selectedRole)
-                    }
-                },
-                onAuthSuccess = { role, city, locality, lang ->
-                    scope.launch {
-                        if (role.isNotBlank()) {
-                            prefsRepo.setPendingRegistrationRole(role)
+        Crossfade(
+            targetState = isSplashComplete,
+            animationSpec = tween(durationMillis = 380),
+            label = "splash_to_main_crossfade"
+        ) { splashDone ->
+            if (!splashDone) {
+                SkillConnectSplashScreen()
+            } else {
+                val user = currentUser
+                if (user == null) {
+                    SkillConnectAuthScreen(
+                        isDarkMode = prefs.isDarkMode,
+                        isHindi = isHindi,
+                        onToggleDarkMode = {
+                            scope.launch { prefsRepo.setDarkMode(!prefs.isDarkMode) }
+                        },
+                        onToggleLanguage = {
+                            scope.launch { prefsRepo.setLanguage(if (isHindi) "en" else "hi") }
+                        },
+                        onRoleSelectedBeforeAuth = { selectedRole ->
+                            scope.launch {
+                                prefsRepo.setPendingRegistrationRole(selectedRole)
+                            }
+                        },
+                        onAuthSuccess = { role, city, locality, lang ->
+                            scope.launch {
+                                if (role.isNotBlank()) {
+                                    prefsRepo.setPendingRegistrationRole(role)
+                                }
+                                prefsRepo.setLocation(city, locality)
+                                prefsRepo.setLanguage(lang)
+                            }
+                        },
+                        onAdminAuthSuccess = { adminRole, adminUsername, adminPassword ->
+                            pendingExecutiveLogin = Triple(adminRole, adminUsername, adminPassword)
                         }
-                        prefsRepo.setLocation(city, locality)
-                        prefsRepo.setLanguage(lang)
-                    }
-                },
-                onAdminAuthSuccess = { adminRole, adminUsername, adminPassword ->
-                    pendingExecutiveLogin = Triple(adminRole, adminUsername, adminPassword)
-                }
-            )
-        } else {
+                    )
+                } else {
             val viewModel: SkillConnectViewModel = viewModel(
                 key = user.uid,
                 factory = viewModelFactory {
@@ -268,19 +302,25 @@ fun SkillConnectRootApp() {
                 val pending = pendingExecutiveLogin
                 if (pending != null) {
                     pendingExecutiveLogin = null
+                    val credentialManager = CredentialManager.create(context)
                     viewModel.loginOrProvisionExecutiveAdmin(
                         requestedRole = pending.first,
                         usernameInput = pending.second,
-                        passwordInput = pending.third
+                        passwordInput = pending.third,
+                        onUnauthorized = {
+                            performSignOut(credentialManager, {}, scope)
+                        }
                     )
                 }
             }
 
-            SkillConnectMainShell(
-                viewModel = viewModel,
-                isHindi = isHindi,
-                isDarkMode = prefs.isDarkMode
-            )
+                    SkillConnectMainShell(
+                        viewModel = viewModel,
+                        isHindi = isHindi,
+                        isDarkMode = prefs.isDarkMode
+                    )
+                }
+            }
         }
     }
 }
@@ -304,6 +344,8 @@ fun SkillConnectMainShell(
     val filterState by viewModel.filterState.collectAsStateWithLifecycle()
     val customerBookingsState by viewModel.customerBookingsState.collectAsStateWithLifecycle()
     val providerBookingsState by viewModel.providerBookingsState.collectAsStateWithLifecycle()
+    val customerProjects by viewModel.customerProjectsState.collectAsStateWithLifecycle()
+    val providerProjects by viewModel.providerProjectsState.collectAsStateWithLifecycle()
     val conversationsState by viewModel.conversationsState.collectAsStateWithLifecycle()
     val activeConversation by viewModel.activeConversation.collectAsStateWithLifecycle()
     val activeMessages by viewModel.activeMessagesState.collectAsStateWithLifecycle()
@@ -338,6 +380,14 @@ fun SkillConnectMainShell(
     val errorBanner by viewModel.errorBanner.collectAsStateWithLifecycle()
 
     val lifecycleOwner = LocalLifecycleOwner.current
+    val connectivityState = rememberNetworkConnectivityState()
+
+    LaunchedEffect(connectivityState.isOnline) {
+        if (connectivityState.isOnline) {
+            viewModel.onAppResumed()
+        }
+    }
+
     DisposableEffect(lifecycleOwner, viewModel) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
@@ -367,6 +417,13 @@ fun SkillConnectMainShell(
     var showLocationPermissionDialog by remember { mutableStateOf(false) }
     var showAllIndiaLocationPicker by remember { mutableStateOf(false) }
     var showNotificationPermissionDialog by remember { mutableStateOf(false) }
+
+    // Customer-to-Provider Project Submission Modal State
+    var showProjectSubmissionDialog by remember { mutableStateOf(false) }
+    var projectModalProvider by remember { mutableStateOf<UserProfile?>(null) }
+    var projectModalServiceId by remember { mutableStateOf("") }
+    var projectModalServiceTitle by remember { mutableStateOf("") }
+    var projectModalCategory by remember { mutableStateOf("") }
 
     val locationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
@@ -473,32 +530,41 @@ fun SkillConnectMainShell(
             Scaffold(
                 contentWindowInsets = WindowInsets.safeDrawing,
                 topBar = {
-                    GlobalTopNavigationHeader(
-                        isWideScreen = isWideScreen,
-                        isHindi = isHindi,
-                        isDarkMode = isDarkMode,
-                        isProviderAccount = isProviderAccount,
-                        currentDestination = currentDest,
-                        unreadNotifCount = unreadNotifCount,
-                        onOpenDrawerClick = {
-                            scope.launch {
-                                if (drawerState.isOpen) drawerState.close() else drawerState.open()
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        GlobalTopNavigationHeader(
+                            isWideScreen = isWideScreen,
+                            isHindi = isHindi,
+                            isDarkMode = isDarkMode,
+                            isProviderAccount = isProviderAccount,
+                            currentDestination = currentDest,
+                            unreadNotifCount = unreadNotifCount,
+                            onOpenDrawerClick = {
+                                scope.launch {
+                                    if (drawerState.isOpen) drawerState.close() else drawerState.open()
+                                }
+                            },
+                            onRequestLocationClick = {
+                                showAllIndiaLocationPicker = true
+                            },
+                            onNavigate = { dest ->
+                                viewModel.selectConversation(null)
+                                viewModel.navigateTo(dest)
+                            },
+                            onToggleLanguage = {
+                                viewModel.setLanguage(if (isHindi) "en" else "hi")
+                            },
+                            onToggleDarkMode = {
+                                viewModel.setDarkMode(!isDarkMode)
                             }
-                        },
-                        onRequestLocationClick = {
-                            showAllIndiaLocationPicker = true
-                        },
-                        onNavigate = { dest ->
-                            viewModel.selectConversation(null)
-                            viewModel.navigateTo(dest)
-                        },
-                        onToggleLanguage = {
-                            viewModel.setLanguage(if (isHindi) "en" else "hi")
-                        },
-                        onToggleDarkMode = {
-                            viewModel.setDarkMode(!isDarkMode)
-                        }
-                    )
+                        )
+                        NetworkConnectivityBanner(
+                            connectivityState = connectivityState,
+                            isHindi = isHindi,
+                            onRetryConnected = {
+                                viewModel.onAppResumed()
+                            }
+                        )
+                    }
                 },
                 bottomBar = {
                     if (!isWideScreen) {
@@ -668,6 +734,7 @@ fun SkillConnectMainShell(
                                 isHindi = isHindi,
                                 filterState = filterState,
                                 publishedServicesState = publishedServicesState,
+                                publicProvidersState = publicProvidersState,
                                 filteredServices = filteredServices,
                                 favourites = favourites,
                                 appliedJobIds = prefs.appliedJobIds,
@@ -710,6 +777,13 @@ fun SkillConnectMainShell(
                                 },
                                 onToggleFavourite = { id, type, title, sub, loc, price ->
                                     viewModel.toggleFavouriteItem(id, type, title, sub, loc, price)
+                                },
+                                onSubmitProjectToProvider = { prov ->
+                                    projectModalProvider = prov
+                                    projectModalServiceId = ""
+                                    projectModalServiceTitle = ""
+                                    projectModalCategory = prov.primaryCategory
+                                    showProjectSubmissionDialog = true
                                 }
                             )
 
@@ -750,6 +824,23 @@ fun SkillConnectMainShell(
                                     },
                                     onReportListing = { id, type, reason, details ->
                                         viewModel.submitSafetyReport(id, type, reason, details)
+                                    },
+                                    onSubmitProjectClick = {
+                                        projectModalProvider = prov ?: srv?.let {
+                                            UserProfile(
+                                                id = it.providerId,
+                                                userId = it.providerId,
+                                                displayName = it.providerName,
+                                                primaryCategory = it.category,
+                                                city = it.city,
+                                                isVerified = it.providerVerified,
+                                                verificationStatus = if (it.providerVerified) "approved" else "pending_review"
+                                            )
+                                        }
+                                        projectModalServiceId = srv?.id.orEmpty()
+                                        projectModalServiceTitle = srv?.title.orEmpty()
+                                        projectModalCategory = srv?.category.orEmpty()
+                                        showProjectSubmissionDialog = true
                                     }
                                 )
                             }
@@ -778,6 +869,13 @@ fun SkillConnectMainShell(
                                     },
                                     onReportProfile = { id, type, reason, details ->
                                         viewModel.submitSafetyReport(id, type, reason, details)
+                                    },
+                                    onSubmitProjectClick = {
+                                        projectModalProvider = prov
+                                        projectModalServiceId = provServices.firstOrNull()?.id.orEmpty()
+                                        projectModalServiceTitle = provServices.firstOrNull()?.title.orEmpty()
+                                        projectModalCategory = prov?.primaryCategory.orEmpty()
+                                        showProjectSubmissionDialog = true
                                     }
                                 )
                             }
@@ -790,6 +888,7 @@ fun SkillConnectMainShell(
                                     profile = myProfile,
                                     fallbackName = viewModel.currentUserDisplayName,
                                     customerBookings = customerBookings,
+                                    customerProjects = customerProjects,
                                     savedItems = favourites,
                                     recentlyViewedServices = recentServices,
                                     recommendedServices = publishedServices.take(4),
@@ -818,6 +917,31 @@ fun SkillConnectMainShell(
                                     onRequestRefund = { bk, reason ->
                                         viewModel.requestBookingRefund(bk, reason)
                                     },
+                                    onOpenSubmitProject = {
+                                        projectModalProvider = null
+                                        projectModalServiceId = ""
+                                        projectModalServiceTitle = ""
+                                        projectModalCategory = ""
+                                        showProjectSubmissionDialog = true
+                                    },
+                                    onRequestProjectRevision = { project, note ->
+                                        viewModel.requestCustomerProjectRevision(project, note)
+                                    },
+                                    onConfirmProjectCompletion = { project ->
+                                        viewModel.confirmCustomerProjectCompletion(
+                                            project = project,
+                                            completionNote = "Completed and approved by customer"
+                                        )
+                                    },
+                                    onMessageProjectProvider = { project ->
+                                        viewModel.openConversationWithProvider(
+                                            customerId = project.customerId,
+                                            customerName = project.customerName,
+                                            providerId = project.providerId,
+                                            providerName = project.providerName,
+                                            serviceTitle = project.projectTitle
+                                        )
+                                    },
                                     onNavigate = { viewModel.navigateTo(it) },
                                     onSignOut = {
                                         viewModel.performFullLogout {
@@ -831,6 +955,7 @@ fun SkillConnectMainShell(
                                 profile = myProfile,
                                 myServices = myProviderServices,
                                 providerBookings = providerBookings,
+                                providerProjects = providerProjects,
                                 reviews = publishedReviews,
                                 providerPayments = myPayments,
                                 notifications = notifications,
@@ -848,6 +973,25 @@ fun SkillConnectMainShell(
                                         providerName = bk.providerName,
                                         bookingId = bk.id,
                                         serviceTitle = bk.serviceTitle
+                                    )
+                                },
+                                onUpdateProjectStatus = { project, newStatus, responseMsg ->
+                                    viewModel.updateProviderProjectStatus(project, newStatus, responseMsg)
+                                },
+                                onDeliverProjectWork = { project, notes, files ->
+                                    viewModel.submitProviderProjectDelivery(
+                                        project = project,
+                                        deliveryFiles = files,
+                                        deliveryNotes = notes
+                                    )
+                                },
+                                onMessageProjectCustomer = { project ->
+                                    viewModel.openConversationWithProvider(
+                                        customerId = project.customerId,
+                                        customerName = project.customerName,
+                                        providerId = project.providerId,
+                                        providerName = project.providerName,
+                                        serviceTitle = project.projectTitle
                                     )
                                 },
                                 onOpenVerification = { viewModel.navigateTo(AppDestination.PROVIDER_VERIFICATION) },
@@ -1027,7 +1171,16 @@ fun SkillConnectMainShell(
                                     )
                                 },
                                 onLoginExecutiveAdmin = { role, username, password ->
-                                    viewModel.loginOrProvisionExecutiveAdmin(role, username, password)
+                                    viewModel.loginOrProvisionExecutiveAdmin(
+                                        requestedRole = role,
+                                        usernameInput = username,
+                                        passwordInput = password,
+                                        onUnauthorized = {
+                                            viewModel.performFullLogout {
+                                                performSignOut(credentialManager, {}, scope)
+                                            }
+                                        }
+                                    )
                                 },
                                 onLogoutExecutiveAdmin = {
                                     viewModel.logoutExecutiveAdminSession()
@@ -1160,7 +1313,16 @@ fun SkillConnectMainShell(
                                     viewModel.adminDeleteConversation(convId)
                                 },
                                 onLoginExecutiveAdmin = { role, username, password ->
-                                    viewModel.loginOrProvisionExecutiveAdmin(role, username, password)
+                                    viewModel.loginOrProvisionExecutiveAdmin(
+                                        requestedRole = role,
+                                        usernameInput = username,
+                                        passwordInput = password,
+                                        onUnauthorized = {
+                                            viewModel.performFullLogout {
+                                                performSignOut(credentialManager, {}, scope)
+                                            }
+                                        }
+                                    )
                                 },
                                 onLogoutExecutiveAdmin = {
                                     viewModel.logoutExecutiveAdminSession()
@@ -1188,6 +1350,35 @@ fun SkillConnectMainShell(
             }
         }
     }
+    }
+
+    if (showProjectSubmissionDialog) {
+        CustomerProjectSubmissionDialog(
+            preselectedProvider = projectModalProvider,
+            availableProviders = publicProviders,
+            initialServiceId = projectModalServiceId,
+            initialServiceTitle = projectModalServiceTitle,
+            initialCategory = projectModalCategory,
+            customerUid = viewModel.currentUserId,
+            onDismiss = { showProjectSubmissionDialog = false },
+            onSubmitProject = { provId, provName, srvId, cat, title, desc, reqs, date, budget, instr, attachments ->
+                showProjectSubmissionDialog = false
+                viewModel.submitCustomerProject(
+                    providerId = provId,
+                    providerName = provName,
+                    serviceId = srvId,
+                    serviceTitle = projectModalServiceTitle,
+                    category = cat,
+                    title = title,
+                    description = desc,
+                    requirements = reqs,
+                    budgetInr = budget.toLong(),
+                    expectedDeliveryDate = date,
+                    additionalInstructions = instr,
+                    attachments = attachments
+                )
+            }
+        )
     }
 
     if (showDrawerLogoutConfirmDialog) {

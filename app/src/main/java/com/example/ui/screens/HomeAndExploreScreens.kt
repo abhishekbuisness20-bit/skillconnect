@@ -77,6 +77,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -127,20 +128,388 @@ fun HomeScreen(
 ) {
     var searchKeyword by remember { mutableStateOf("") }
     var searchCity by remember(selectedCity) { mutableStateOf(selectedCity) }
+    var topSelectedCategory by remember { mutableStateOf("All") }
+    var topSearchScope by remember { mutableStateOf("all") } // "all", "services", "providers"
     var cityDropdownExpanded by remember { mutableStateOf(false) }
     var expandedFaqIndex by remember { mutableStateOf<Int?>(0) }
 
     val publishedServices = (publishedServicesState as? UiState.Success)?.data.orEmpty()
     val publicProviders = (publicProvidersState as? UiState.Success)?.data.orEmpty()
 
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .testTag("home_screen_list"),
-        contentPadding = PaddingValues(top = 14.dp, bottom = 32.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp)
-    ) {
-        // 1. Optional Announcement Bar (Admin managed) positioned cleanly below the top app bar
+    val trimmedQuery = searchKeyword.trim().lowercase()
+    val isTopSearchActive = trimmedQuery.isNotEmpty() || topSelectedCategory != "All"
+
+    val matchingTopProviders = remember(publicProviders, trimmedQuery, topSelectedCategory, searchCity) {
+        if (!isTopSearchActive) {
+            emptyList()
+        } else {
+            publicProviders.filter { prov ->
+                val matchesQuery = trimmedQuery.isEmpty() ||
+                    prov.displayName.lowercase().contains(trimmedQuery) ||
+                    prov.primaryCategory.lowercase().contains(trimmedQuery) ||
+                    prov.subcategories.contains(trimmedQuery, ignoreCase = true) ||
+                    prov.headline.lowercase().contains(trimmedQuery) ||
+                    prov.skills.any { it.lowercase().contains(trimmedQuery) } ||
+                    prov.effectivePlatformId.lowercase().contains(trimmedQuery) ||
+                    prov.city.lowercase().contains(trimmedQuery)
+                val matchesCat = topSelectedCategory == "All" ||
+                    prov.primaryCategory.equals(topSelectedCategory, ignoreCase = true) ||
+                    prov.subcategories.contains(topSelectedCategory, ignoreCase = true)
+                val matchesCity = searchCity == "All India" ||
+                    prov.city.equals("All India", ignoreCase = true) ||
+                    prov.city.equals(searchCity, ignoreCase = true) ||
+                    prov.city.contains(searchCity, ignoreCase = true)
+                matchesQuery && matchesCat && matchesCity
+            }
+        }
+    }
+
+    val matchingTopServices = remember(publishedServices, trimmedQuery, topSelectedCategory, searchCity) {
+        if (!isTopSearchActive) {
+            emptyList()
+        } else {
+            publishedServices.filter { srv ->
+                val matchesQuery = trimmedQuery.isEmpty() ||
+                    srv.title.lowercase().contains(trimmedQuery) ||
+                    srv.category.lowercase().contains(trimmedQuery) ||
+                    srv.providerName.lowercase().contains(trimmedQuery) ||
+                    srv.shortSummary.lowercase().contains(trimmedQuery) ||
+                    srv.skills.any { it.lowercase().contains(trimmedQuery) } ||
+                    srv.city.lowercase().contains(trimmedQuery)
+                val matchesCat = topSelectedCategory == "All" ||
+                    srv.category.equals(topSelectedCategory, ignoreCase = true)
+                val matchesCity = searchCity == "All India" ||
+                    srv.city.equals("All India", ignoreCase = true) ||
+                    srv.city.equals(searchCity, ignoreCase = true) ||
+                    srv.city.contains(searchCity, ignoreCase = true)
+                matchesQuery && matchesCat && matchesCity
+            }
+        }
+    }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        // Persistent Top Marketplace Search Bar for finding Providers or Local Services by Name or Category
+        Surface(
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 2.dp,
+            shadowElevation = 3.dp,
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("marketplace_top_search_bar")
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedTextField(
+                    value = searchKeyword,
+                    onValueChange = { searchKeyword = it },
+                    placeholder = {
+                        Text(
+                            text = if (isHindi) {
+                                stringResource(R.string.marketplace_top_search_placeholder_hi)
+                            } else {
+                                stringResource(R.string.marketplace_top_search_placeholder_en)
+                            },
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = null,
+                            tint = SkillBlue
+                        )
+                    },
+                    trailingIcon = {
+                        if (searchKeyword.isNotEmpty() || topSelectedCategory != "All") {
+                            IconButton(
+                                onClick = {
+                                    searchKeyword = ""
+                                    topSelectedCategory = "All"
+                                },
+                                modifier = Modifier.testTag("marketplace_top_search_clear_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Clear,
+                                    contentDescription = stringResource(R.string.cd_clear_marketplace_search)
+                                )
+                            }
+                        }
+                    },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("marketplace_top_search_input")
+                )
+
+                // Quick Scope & Category Filter Row
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    listOf(
+                        "all" to if (isHindi) stringResource(R.string.marketplace_search_scope_all_hi) else stringResource(R.string.marketplace_search_scope_all_en),
+                        "services" to if (isHindi) stringResource(R.string.marketplace_search_scope_services_hi) else stringResource(R.string.marketplace_search_scope_services_en),
+                        "providers" to if (isHindi) stringResource(R.string.marketplace_search_scope_providers_hi) else stringResource(R.string.marketplace_search_scope_providers_en)
+                    ).forEach { (scopeKey, label) ->
+                        FilterChip(
+                            selected = topSearchScope == scopeKey,
+                            onClick = { topSearchScope = scopeKey },
+                            label = { Text(label) },
+                            modifier = Modifier.testTag("marketplace_search_scope_$scopeKey")
+                        )
+                    }
+
+                    FilterChip(
+                        selected = topSelectedCategory == "All",
+                        onClick = { topSelectedCategory = "All" },
+                        label = { Text(if (isHindi) "सभी श्रेणियां" else "All Categories") },
+                        modifier = Modifier.testTag("marketplace_top_category_all")
+                    )
+
+                    MarketplaceCatalog.categories.forEach { cat ->
+                        FilterChip(
+                            selected = topSelectedCategory.equals(cat.id, ignoreCase = true),
+                            onClick = {
+                                topSelectedCategory = if (topSelectedCategory.equals(cat.id, ignoreCase = true)) {
+                                    "All"
+                                } else {
+                                    cat.id
+                                }
+                            },
+                            label = { Text(if (isHindi) cat.nameHi else cat.nameEn) },
+                            modifier = Modifier.testTag("marketplace_top_category_${cat.id}")
+                        )
+                    }
+                }
+            }
+        }
+
+        LazyColumn(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .testTag("home_screen_list"),
+            contentPadding = PaddingValues(top = 14.dp, bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp)
+        ) {
+            // Instant Live Results Card when user searches by Name or Category in the Top Search Bar
+            if (isTopSearchActive) {
+                item {
+                    Card(
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp)
+                            .border(1.dp, SkillBlue.copy(alpha = 0.28f), RoundedCornerShape(16.dp))
+                            .testTag("marketplace_top_search_results_card")
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = if (isHindi) "त्वरित खोज परिणाम" else "Instant Marketplace Search Results",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = buildString {
+                                            append("${matchingTopServices.size} local service(s) • ${matchingTopProviders.size} service provider(s)")
+                                            if (topSelectedCategory != "All") {
+                                                append(" • Category: $topSelectedCategory")
+                                            }
+                                        },
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                TextButton(
+                                    onClick = {
+                                        if (topSelectedCategory != "All" && searchKeyword.isBlank()) {
+                                            onCategorySelected(topSelectedCategory)
+                                        } else {
+                                            onSearchTriggered(
+                                                searchKeyword.ifBlank {
+                                                    if (topSelectedCategory != "All") topSelectedCategory else ""
+                                                },
+                                                searchCity
+                                            )
+                                        }
+                                    },
+                                    modifier = Modifier.testTag("marketplace_top_search_explore_all_button")
+                                ) {
+                                    Text(
+                                        text = if (isHindi) "सभी देखें →" else "Explore All →",
+                                        color = SkillBlue,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+
+                            val showProvidersSection = topSearchScope == "all" || topSearchScope == "providers"
+                            val showServicesSection = topSearchScope == "all" || topSearchScope == "services"
+
+                            if (showProvidersSection && matchingTopProviders.isNotEmpty()) {
+                                Text(
+                                    text = if (isHindi) "मैचिंग सर्विस प्रोवाइडर्स (${matchingTopProviders.size})" else "Matching Service Providers (${matchingTopProviders.size})",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = SkillBlue,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                matchingTopProviders.take(4).forEach { prov ->
+                                    val strictVerified = prov.isStrictVerifiedBadgeActive
+                                    Surface(
+                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                                        shape = RoundedCornerShape(12.dp),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable { onOpenProviderProfile(prov.userId) }
+                                            .testTag("top_search_provider_result_${prov.userId}")
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(12.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(40.dp)
+                                                    .clip(CircleShape)
+                                                    .background(SkillBrandGradient),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(
+                                                    text = prov.displayName.take(1).uppercase(),
+                                                    color = Color.White,
+                                                    style = MaterialTheme.typography.titleSmall,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            }
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                ) {
+                                                    Text(
+                                                        text = prov.displayName,
+                                                        style = MaterialTheme.typography.titleSmall,
+                                                        fontWeight = FontWeight.Bold,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis
+                                                    )
+                                                    if (strictVerified) {
+                                                        Icon(
+                                                            imageVector = Icons.Default.Verified,
+                                                            contentDescription = "Verified Provider",
+                                                            tint = SkillBlue,
+                                                            modifier = Modifier.size(15.dp)
+                                                        )
+                                                    }
+                                                }
+                                                Text(
+                                                    text = "${prov.primaryCategory} • ${prov.city}",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                            Text(
+                                                text = if (prov.startingPrice > 0L) "₹${prov.startingPrice}+" else "View",
+                                                style = MaterialTheme.typography.labelMedium,
+                                                color = SkillBlue,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (showServicesSection && matchingTopServices.isNotEmpty()) {
+                                Text(
+                                    text = if (isHindi) "मैचिंग लोकल सेवाएं (${matchingTopServices.size})" else "Matching Local Services (${matchingTopServices.size})",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = SkillBlue,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                matchingTopServices.take(5).forEach { srv ->
+                                    Surface(
+                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                                        shape = RoundedCornerShape(12.dp),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable { onOpenServiceDetail(srv.id) }
+                                            .testTag("top_search_service_result_${srv.id}")
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(12.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = srv.title,
+                                                    style = MaterialTheme.typography.titleSmall,
+                                                    fontWeight = FontWeight.Bold,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                                Text(
+                                                    text = "${srv.category} • by ${srv.providerName} • ${srv.city}",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(
+                                                text = if (srv.pricingModel == "quote") "Quote" else "₹${srv.startingPrice}",
+                                                style = MaterialTheme.typography.labelMedium,
+                                                color = SkillBlue,
+                                                fontWeight = FontWeight.ExtraBold
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            if ((showProvidersSection && matchingTopProviders.isEmpty()) &&
+                                (showServicesSection && matchingTopServices.isEmpty()) ||
+                                (topSearchScope == "providers" && matchingTopProviders.isEmpty()) ||
+                                (topSearchScope == "services" && matchingTopServices.isEmpty())
+                            ) {
+                                Text(
+                                    text = if (isHindi) {
+                                        "इस नाम या श्रेणी के लिए कोई मिलान नहीं मिला। कृपया अन्य कीवर्ड आज़माएं।"
+                                    } else {
+                                        "No matching local services or providers found for this name or category."
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 1. Optional Announcement Bar (Admin managed) positioned cleanly below the top app bar
         if (globalSettings?.announcementActive != false) {
             item {
                 val text = globalSettings?.announcementText?.ifBlank {
@@ -858,6 +1227,7 @@ fun HomeScreen(
             }
         }
     }
+    }
 }
 
 @Composable
@@ -1058,6 +1428,7 @@ fun ExploreServicesScreen(
     isHindi: Boolean,
     filterState: ExploreFilterState,
     publishedServicesState: UiState<List<ServiceListing>>,
+    publicProvidersState: UiState<List<UserProfile>> = UiState.Success(emptyList()),
     filteredServices: List<ServiceListing>,
     favourites: List<FavouriteItem>,
     appliedJobIds: List<String> = emptyList(),
@@ -1074,6 +1445,37 @@ fun ExploreServicesScreen(
 ) {
     var showFilterDrawer by remember { mutableStateOf(false) }
     var showExploreLocationPicker by remember { mutableStateOf(false) }
+    var exploreResultScope by remember { mutableStateOf("all") } // "all", "services", "providers"
+
+    val allPublicProviders = (publicProvidersState as? UiState.Success)?.data.orEmpty()
+    val matchingProviders = remember(
+        allPublicProviders,
+        filterState.keyword,
+        filterState.selectedCategory,
+        filterState.selectedCity,
+        filterState.verifiedOnly
+    ) {
+        val kw = filterState.keyword.trim().lowercase()
+        allPublicProviders.filter { prov ->
+            val matchesKw = kw.isEmpty() ||
+                prov.displayName.lowercase().contains(kw) ||
+                prov.primaryCategory.lowercase().contains(kw) ||
+                prov.subcategories.contains(kw, ignoreCase = true) ||
+                prov.headline.lowercase().contains(kw) ||
+                prov.skills.any { it.lowercase().contains(kw) } ||
+                prov.effectivePlatformId.lowercase().contains(kw) ||
+                prov.city.lowercase().contains(kw)
+            val matchesCat = filterState.selectedCategory == "All" ||
+                prov.primaryCategory.equals(filterState.selectedCategory, ignoreCase = true) ||
+                prov.subcategories.contains(filterState.selectedCategory, ignoreCase = true)
+            val matchesCity = filterState.selectedCity == "All India" ||
+                prov.city.equals("All India", ignoreCase = true) ||
+                prov.city.equals(filterState.selectedCity, ignoreCase = true) ||
+                prov.city.contains(filterState.selectedCity, ignoreCase = true)
+            val matchesVerified = !filterState.verifiedOnly || prov.isStrictVerifiedBadgeActive
+            matchesKw && matchesCat && matchesCity && matchesVerified
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -1099,7 +1501,10 @@ fun ExploreServicesScreen(
                         value = filterState.keyword,
                         onValueChange = { kw -> onUpdateFilter { it.copy(keyword = kw) } },
                         placeholder = {
-                            Text(if (isHindi) "सेवा, कौशल या नाम खोजें..." else "Search by keyword, skill, or provider...")
+                            Text(
+                                if (isHindi) stringResource(R.string.marketplace_top_search_placeholder_hi)
+                                else stringResource(R.string.marketplace_top_search_placeholder_en)
+                            )
                         },
                         leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                         trailingIcon = {
@@ -1247,7 +1652,12 @@ fun ExploreServicesScreen(
             }
 
             is UiState.Success -> {
-                if (filteredServices.isEmpty()) {
+                val showServicesInExplore = exploreResultScope == "all" || exploreResultScope == "services"
+                val showProvidersInExplore = exploreResultScope == "all" || exploreResultScope == "providers"
+                val hasMatchingServices = showServicesInExplore && filteredServices.isNotEmpty()
+                val hasMatchingProviders = showProvidersInExplore && matchingProviders.isNotEmpty()
+
+                if (!hasMatchingServices && !hasMatchingProviders) {
                     // Empty Search State + Search Suggestions
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
@@ -1257,7 +1667,7 @@ fun ExploreServicesScreen(
                     ) {
                         item {
                             Text(
-                                text = if (isHindi) "कोई सेवा नहीं मिली" else "No Matching Services Found",
+                                text = if (isHindi) "कोई सेवा या प्रोवाइडर नहीं मिला" else "No Matching Services or Providers Found",
                                 style = MaterialTheme.typography.headlineSmall,
                                 fontWeight = FontWeight.Bold
                             )
@@ -1305,14 +1715,150 @@ fun ExploreServicesScreen(
                         verticalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
                         item {
-                            Text(
-                                text = "Showing ${filteredServices.size} service listing(s) • City: ${filterState.selectedCity}",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                FilterChip(
+                                    selected = exploreResultScope == "all",
+                                    onClick = { exploreResultScope = "all" },
+                                    label = {
+                                        Text(
+                                            if (isHindi) "सभी (${filteredServices.size + matchingProviders.size})"
+                                            else "All (${filteredServices.size + matchingProviders.size})"
+                                        )
+                                    },
+                                    modifier = Modifier.testTag("explore_scope_all_chip")
+                                )
+                                FilterChip(
+                                    selected = exploreResultScope == "services",
+                                    onClick = { exploreResultScope = "services" },
+                                    label = {
+                                        Text(
+                                            if (isHindi) "लोकल सेवाएं (${filteredServices.size})"
+                                            else "Local Services (${filteredServices.size})"
+                                        )
+                                    },
+                                    modifier = Modifier.testTag("explore_scope_services_chip")
+                                )
+                                FilterChip(
+                                    selected = exploreResultScope == "providers",
+                                    onClick = { exploreResultScope = "providers" },
+                                    label = {
+                                        Text(
+                                            if (isHindi) "प्रोवाइडर्स (${matchingProviders.size})"
+                                            else "Service Providers (${matchingProviders.size})"
+                                        )
+                                    },
+                                    modifier = Modifier.testTag("explore_scope_providers_chip")
+                                )
+                            }
                         }
 
-                        if (filterState.isGridView) {
+                        if (showProvidersInExplore && matchingProviders.isNotEmpty() &&
+                            (exploreResultScope == "providers" || filterState.keyword.isNotBlank() || filterState.selectedCategory != "All")
+                        ) {
+                            item {
+                                Text(
+                                    text = if (isHindi) {
+                                        "मैचिंग सर्विस प्रोवाइडर्स (${matchingProviders.size})"
+                                    } else {
+                                        "Matching Service Providers (${matchingProviders.size})"
+                                    },
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = SkillBlue,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            val displayedProviders = if (exploreResultScope == "providers") matchingProviders else matchingProviders.take(4)
+                            items(displayedProviders, key = { "explore_prov_${it.userId}" }) { prov ->
+                                val strictVerified = prov.isStrictVerifiedBadgeActive
+                                Card(
+                                    shape = RoundedCornerShape(14.dp),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(14.dp))
+                                        .clickable { onOpenProviderProfile(prov.userId) }
+                                        .testTag("explore_provider_result_${prov.userId}")
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(14.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(44.dp)
+                                                .clip(CircleShape)
+                                                .background(SkillBrandGradient),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = prov.displayName.take(1).uppercase(),
+                                                color = Color.White,
+                                                style = MaterialTheme.typography.titleMedium,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                            ) {
+                                                Text(
+                                                    text = prov.displayName,
+                                                    style = MaterialTheme.typography.titleSmall,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                                if (strictVerified) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Verified,
+                                                        contentDescription = "Verified by SkillConnect",
+                                                        tint = SkillBlue,
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                }
+                                            }
+                                            Text(
+                                                text = prov.headline.ifBlank { "${prov.primaryCategory} Professional" },
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            Text(
+                                                text = "${prov.primaryCategory} • ${prov.city}",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = SkillBlue,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                        }
+                                        OutlinedButton(
+                                            onClick = { onOpenProviderProfile(prov.userId) },
+                                            shape = RoundedCornerShape(10.dp),
+                                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                        ) {
+                                            Text("Profile", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        if (showServicesInExplore && filteredServices.isNotEmpty()) {
+                            item {
+                                Text(
+                                    text = "Showing ${filteredServices.size} service listing(s) • City: ${filterState.selectedCity}",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+
+                            if (filterState.isGridView) {
                             val chunked = filteredServices.chunked(2)
                             items(chunked) { pair ->
                                 Row(
@@ -1368,15 +1914,16 @@ fun ExploreServicesScreen(
                             }
                         }
 
-                        if (publishedServicesState.data.size > filteredServices.size) {
-                            item {
-                                OutlinedButton(
-                                    onClick = onLoadMore,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .testTag("explore_load_more_button")
-                                ) {
-                                    Text("Load More Services")
+                            if (publishedServicesState.data.size > filteredServices.size) {
+                                item {
+                                    OutlinedButton(
+                                        onClick = onLoadMore,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .testTag("explore_load_more_button")
+                                    ) {
+                                        Text("Load More Services")
+                                    }
                                 }
                             }
                         }
@@ -1758,7 +2305,8 @@ fun ProviderDirectoryScreen(
     favourites: List<FavouriteItem>,
     onOpenProviderProfile: (String) -> Unit,
     onMessageProvider: (providerId: String, providerName: String) -> Unit,
-    onToggleFavourite: (targetId: String, targetType: String, title: String, subtitle: String, location: String, price: Long) -> Unit
+    onToggleFavourite: (targetId: String, targetType: String, title: String, subtitle: String, location: String, price: Long) -> Unit,
+    onSubmitProjectToProvider: (UserProfile) -> Unit = {}
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var selectedCity by remember { mutableStateOf("All India") }
@@ -2075,16 +2623,39 @@ fun ProviderDirectoryScreen(
                                     fontWeight = FontWeight.ExtraBold
                                 )
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    OutlinedButton(onClick = { onMessageProvider(prov.userId, prov.displayName) }) {
-                                        Text("Message")
+                                    OutlinedButton(
+                                        onClick = { onMessageProvider(prov.userId, prov.displayName) },
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                                    ) {
+                                        Text("Message", maxLines = 1, softWrap = false)
                                     }
                                     Button(
                                         onClick = { onOpenProviderProfile(prov.userId) },
-                                        colors = ButtonDefaults.buttonColors(containerColor = SkillBlue)
+                                        colors = ButtonDefaults.buttonColors(containerColor = SkillBlue),
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
                                     ) {
-                                        Text("View Profile")
+                                        Text("View Profile", maxLines = 1, softWrap = false)
                                     }
                                 }
+                            }
+
+                            Button(
+                                onClick = { onSubmitProjectToProvider(prov) },
+                                colors = ButtonDefaults.buttonColors(containerColor = SkillSuccessGreen),
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(42.dp)
+                                    .testTag("directory_submit_project_${prov.userId}")
+                            ) {
+                                Text(
+                                    text = "Submit Your Project",
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Ellipsis
+                                )
                             }
                         }
                     }

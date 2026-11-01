@@ -8,6 +8,8 @@ import com.example.data.local.UserPreferencesRepository
 import com.example.data.model.AdminAccount
 import com.example.data.model.AdminAuditLog
 import com.example.data.model.AppNotification
+import com.example.data.model.AuthorizedAdminConfig
+import com.example.data.model.AuthorizedAdminSpec
 import com.example.data.model.BookingRequest
 import com.example.data.model.ChatMessage
 import com.example.data.model.Conversation
@@ -16,6 +18,8 @@ import com.example.data.model.JobOpportunityItem
 import com.example.data.model.PaymentDispute
 import com.example.data.model.PaymentRecord
 import com.example.data.model.PlatformSetting
+import com.example.data.model.ProjectAttachmentMeta
+import com.example.data.model.ProjectSubmission
 import com.example.data.model.SafetyReport
 import com.example.data.model.ServiceListing
 import com.example.data.model.ServiceReview
@@ -89,8 +93,10 @@ class SkillConnectViewModel(
     val currentUserDisplayName: String
 ) : ViewModel() {
 
+    val authorizedEmailSpec: AuthorizedAdminSpec? =
+        AuthorizedAdminConfig.resolveForEmail(currentUserEmail)
     private val isLegacyFounderEmail: Boolean =
-        currentUserEmail.equals("abhishekbuisness20@gmail.com", ignoreCase = true)
+        AuthorizedAdminConfig.isFounderEmail(currentUserEmail)
 
     private var initialRoleRoutingDone = false
     private var statusDismissJob: Job? = null
@@ -144,6 +150,8 @@ class SkillConnectViewModel(
         userPreferences
     ) { adminDoc, prefs ->
         when {
+            authorizedEmailSpec != null && (adminDoc != null || prefs.activeAdminRole.isNotBlank() || authorizedEmailSpec.adminRole == "founder") ->
+                authorizedEmailSpec.adminRole
             adminDoc != null && adminDoc.adminRole in listOf("cofounder", "ceo", "founder") -> adminDoc.adminRole
             prefs.activeAdminRole in listOf("cofounder", "ceo", "founder") -> prefs.activeAdminRole
             isLegacyFounderEmail -> "founder"
@@ -160,6 +168,9 @@ class SkillConnectViewModel(
             activeExecutiveRole.value.isNotBlank() ||
             myAdminAccountState.value?.adminRole?.isNotBlank() == true ||
             userPreferences.value.activeAdminRole.isNotBlank()
+
+    val isFounderAccessGroup: Boolean
+        get() = AuthorizedAdminConfig.isFounderAccessGroupRole(activeExecutiveRole.value) || isLegacyFounderEmail
 
     // 1. My Profile
     val myProfileState: StateFlow<UiState<UserProfile?>> = repository.observeMyProfile(currentUserId)
@@ -283,6 +294,23 @@ class SkillConnectViewModel(
             emit(UiState.Error(e.message ?: "Failed to load provider bookings"))
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), UiState.Loading)
+
+    // 4b. Customer & Provider Project Submissions
+    val customerProjectsState: StateFlow<List<ProjectSubmission>> = repository.observeCustomerProjects(currentUserId)
+        .map { list -> list.sortedByDescending { it.createdAt?.seconds ?: 0L } }
+        .catch { e ->
+            Log.w(TAG, "Error observing customer projects", e)
+            emit(emptyList())
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
+
+    val providerProjectsState: StateFlow<List<ProjectSubmission>> = repository.observeProviderProjects(currentUserId)
+        .map { list -> list.sortedByDescending { it.createdAt?.seconds ?: 0L } }
+        .catch { e ->
+            Log.w(TAG, "Error observing provider projects", e)
+            emit(emptyList())
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
 
     // 5. Payments, Payouts & Disputes Ledger
     val myPaymentsState: StateFlow<List<PaymentRecord>> = combine(
@@ -690,6 +718,9 @@ class SkillConnectViewModel(
         preferredLanguage: String
     ) {
         viewModelScope.launch {
+            if (authorizedEmailSpec != null) {
+                repository.syncAuthorizedAdminRoleAndPermissionsOnLogin()
+            }
             val existing = repository.getProfile(currentUserId).getOrNull()
             val targetCity = city.takeIf { it != "All India" && it.isNotBlank() } ?: "Bengaluru"
 
@@ -1532,12 +1563,8 @@ class SkillConnectViewModel(
     fun adminProcessBookingRefund(booking: BookingRequest, approveRefund: Boolean, adminNote: String) {
         viewModelScope.launch {
             val activeRole = activeExecutiveRole.value
-            if (activeRole == "cofounder") {
-                showError("Co-Founder accounts cannot directly execute refunds. Flag or escalate the dispute to CEO.")
-                return@launch
-            }
             if (approveRefund && activeRole == "ceo" && booking.effectiveTotalInr > 10000L) {
-                showError("CEO refund limit is ₹10,000 INR. Refunds above ₹10,000 require Founder approval.")
+                showError("CEO refund limit is ₹10,000 INR. Refunds above ₹10,000 require Founder / Co-Founder approval.")
                 return@launch
             }
             val nextStatus = if (approveRefund) "refunded" else "confirmed"
@@ -1574,12 +1601,8 @@ class SkillConnectViewModel(
     fun adminUpdatePaymentOrPayout(payment: PaymentRecord, newStatus: String, note: String) {
         viewModelScope.launch {
             val activeRole = activeExecutiveRole.value
-            if (activeRole == "cofounder") {
-                showError("Co-Founder accounts do not have payment ledger or refund approval privileges.")
-                return@launch
-            }
             if (newStatus == "refunded" && activeRole == "ceo" && payment.amountInr > 10000L) {
-                showError("CEO refund limit is ₹10,000 INR. Escalate refunds above ₹10,000 to Founder.")
+                showError("CEO refund limit is ₹10,000 INR. Escalate refunds above ₹10,000 to Founder / Co-Founder.")
                 return@launch
             }
             repository.updatePaymentStatus(payment.id, newStatus, note)
@@ -1616,8 +1639,8 @@ class SkillConnectViewModel(
     ) {
         viewModelScope.launch {
             val activeRole = activeExecutiveRole.value
-            if (activeRole !in listOf("ceo", "founder") && !isLegacyFounderEmail) {
-                showError("Only an active CEO or Founder can approve or reject Direct UPI subscription payments.")
+            if (activeRole !in listOf("ceo", "founder", "cofounder") && !isLegacyFounderEmail) {
+                showError("Only an active Founder, Co-Founder, or CEO can approve or reject Direct UPI subscription payments.")
                 return@launch
             }
             val cleanNote = verificationNote.trim()
@@ -1763,10 +1786,11 @@ class SkillConnectViewModel(
     // --- Executive Admin Authentication, Session Security & Dispute Resolution (Sections B, C, F, G) ---
 
     fun loginOrProvisionExecutiveAdmin(
-        requestedRole: String,
-        usernameInput: String,
+        requestedRole: String = "",
+        usernameInput: String = "",
         passwordInput: String,
-        onSuccess: () -> Unit = {}
+        onSuccess: () -> Unit = {},
+        onUnauthorized: () -> Unit = {}
     ) {
         viewModelScope.launch {
             repository.authenticateOrProvisionExecutiveAdmin(
@@ -1783,7 +1807,7 @@ class SkillConnectViewModel(
                     adminRole = adminAccount.adminRole,
                     canonicalId = adminAccount.canonicalAccountId,
                     displayName = adminAccount.displayName,
-                    username = usernameInput.trim(),
+                    username = adminAccount.username,
                     expiresAtMs = expiresMs
                 )
                 repository.recordAdminAuditLog(
@@ -1791,7 +1815,7 @@ class SkillConnectViewModel(
                     actionType = "EXECUTIVE_ADMIN_LOGIN_${adminAccount.adminRole.uppercase()}",
                     targetCollection = "admins",
                     targetId = adminAccount.adminUid,
-                    reason = "Signed in via ${adminAccount.displayName} Login Card as ${usernameInput.trim()}",
+                    reason = "Signed in via Unified Admin Gmail Login (${currentUserEmail}) -> Assigned role: ${adminAccount.adminRole.uppercase()}",
                     previousState = "authenticated",
                     newState = "${adminAccount.canonicalAccountId} (${adminAccount.adminRole})"
                 )
@@ -1805,6 +1829,10 @@ class SkillConnectViewModel(
                 _currentDestination.value = AppDestination.ADMIN_DASHBOARD
                 onSuccess()
             }.onFailure { e ->
+                if (e is SecurityException) {
+                    preferencesRepository.clearAdminSession()
+                    onUnauthorized()
+                }
                 showError(e.localizedMessage ?: "Executive admin authentication failed")
             }
         }
@@ -2059,6 +2087,164 @@ class SkillConnectViewModel(
                     "Enrolled in '${course.title}'!"
                 }
             )
+        }
+    }
+
+    // --- Customer-to-Service-Provider Project Submission Actions ---
+
+    fun submitCustomerProject(
+        providerId: String,
+        providerName: String,
+        serviceId: String,
+        serviceTitle: String,
+        category: String,
+        title: String,
+        description: String,
+        requirements: String,
+        budgetInr: Long,
+        expectedDeliveryDate: String,
+        additionalInstructions: String,
+        attachments: List<ProjectAttachmentMeta>,
+        onCompleted: () -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            val myProfile = (myProfileState.value as? UiState.Success)?.data
+            val custName = myProfile?.displayName?.ifBlank { currentUserDisplayName } ?: currentUserDisplayName
+            repository.submitCustomerProject(
+                customerName = custName,
+                customerEmail = currentUserEmail,
+                providerId = providerId,
+                providerName = providerName,
+                serviceId = serviceId,
+                serviceTitle = serviceTitle,
+                category = category,
+                title = title,
+                description = description,
+                requirements = requirements,
+                budgetInr = budgetInr,
+                expectedDeliveryDate = expectedDeliveryDate,
+                additionalInstructions = additionalInstructions,
+                attachments = attachments
+            ).onSuccess { projectId ->
+                val projRef = "SC-PRJ-${projectId.removePrefix("prj_").uppercase().take(8)}"
+                repository.sendNotification(
+                    recipientUserId = providerId,
+                    title = "New Project Received ($projRef)",
+                    body = "$custName submitted project '$title' (${attachments.size} attachments). Budget: ₹$budgetInr",
+                    type = "project_submitted",
+                    relatedId = projectId
+                )
+                repository.sendNotification(
+                    recipientUserId = currentUserId,
+                    title = "Project Submitted ($projRef)",
+                    body = "Your project '$title' was sent to $providerName with ${attachments.size} attached files.",
+                    type = "project_submitted",
+                    relatedId = projectId
+                )
+                showStatus("Project '$title' ($projRef) submitted to $providerName!")
+                onCompleted()
+            }.onFailure { e ->
+                showError(e.localizedMessage ?: "Failed to submit project")
+            }
+        }
+    }
+
+    fun updateProviderProjectStatus(
+        project: ProjectSubmission,
+        newStatus: String,
+        providerResponse: String
+    ) {
+        viewModelScope.launch {
+            repository.updateProviderProjectStatus(
+                project = project,
+                newStatus = newStatus,
+                providerResponse = providerResponse
+            ).onSuccess {
+                repository.sendNotification(
+                    recipientUserId = project.customerId,
+                    title = "Project Update (${project.effectiveProjectRef})",
+                    body = "${project.providerName} updated '${project.title}' to ${newStatus.replace("_", " ").uppercase()}. ${providerResponse.take(120)}",
+                    type = "project_status_update",
+                    relatedId = project.id.ifBlank { project.projectId }
+                )
+                showStatus("Project ${project.effectiveProjectRef} updated to ${newStatus.replace("_", " ")}.")
+            }.onFailure { e ->
+                showError(e.localizedMessage ?: "Failed to update project status")
+            }
+        }
+    }
+
+    fun submitProviderProjectDelivery(
+        project: ProjectSubmission,
+        deliveryFiles: List<ProjectAttachmentMeta>,
+        deliveryNotes: String
+    ) {
+        viewModelScope.launch {
+            repository.submitProviderProjectDelivery(
+                project = project,
+                deliveryFiles = deliveryFiles,
+                deliveryNotes = deliveryNotes
+            ).onSuccess {
+                repository.sendNotification(
+                    recipientUserId = project.customerId,
+                    title = "Work Delivered (${project.effectiveProjectRef})",
+                    body = "${project.providerName} delivered ${deliveryFiles.size} file(s) for '${project.title}'. Review and confirm completion in My Projects.",
+                    type = "project_delivered",
+                    relatedId = project.id.ifBlank { project.projectId }
+                )
+                showStatus("Delivered work for ${project.effectiveProjectRef} (${deliveryFiles.size} files)!")
+            }.onFailure { e ->
+                showError(e.localizedMessage ?: "Failed to submit project delivery")
+            }
+        }
+    }
+
+    fun requestCustomerProjectRevision(
+        project: ProjectSubmission,
+        revisionNote: String
+    ) {
+        viewModelScope.launch {
+            val myProfile = (myProfileState.value as? UiState.Success)?.data
+            val custName = myProfile?.displayName?.ifBlank { currentUserDisplayName } ?: currentUserDisplayName
+            repository.requestCustomerProjectRevision(
+                project = project,
+                requestedByName = custName,
+                revisionNote = revisionNote
+            ).onSuccess {
+                repository.sendNotification(
+                    recipientUserId = project.providerId,
+                    title = "Revision Requested (${project.effectiveProjectRef})",
+                    body = "$custName requested a revision on '${project.title}': ${revisionNote.take(120)}",
+                    type = "project_revision",
+                    relatedId = project.id.ifBlank { project.projectId }
+                )
+                showStatus("Revision requested for ${project.effectiveProjectRef}.")
+            }.onFailure { e ->
+                showError(e.localizedMessage ?: "Failed to request revision")
+            }
+        }
+    }
+
+    fun confirmCustomerProjectCompletion(
+        project: ProjectSubmission,
+        completionNote: String
+    ) {
+        viewModelScope.launch {
+            repository.confirmCustomerProjectCompletion(
+                project = project,
+                completionNote = completionNote
+            ).onSuccess {
+                repository.sendNotification(
+                    recipientUserId = project.providerId,
+                    title = "Project Completed (${project.effectiveProjectRef})",
+                    body = "${project.customerName} accepted your delivered work and marked '${project.title}' Completed!",
+                    type = "project_completed",
+                    relatedId = project.id.ifBlank { project.projectId }
+                )
+                showStatus("Project ${project.effectiveProjectRef} marked Completed!")
+            }.onFailure { e ->
+                showError(e.localizedMessage ?: "Failed to confirm project completion")
+            }
         }
     }
 

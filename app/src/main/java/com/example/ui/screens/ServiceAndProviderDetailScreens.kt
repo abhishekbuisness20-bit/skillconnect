@@ -63,8 +63,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.material.icons.filled.AssignmentTurnedIn
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.data.model.FavouriteItem
@@ -104,7 +106,8 @@ fun ServiceDetailScreen(
     ) -> Unit,
     onToggleFavourite: (targetId: String, targetType: String, title: String, subtitle: String, location: String, price: Long) -> Unit,
     onMessageProvider: (providerId: String, providerName: String, serviceTitle: String) -> Unit,
-    onReportListing: (targetId: String, targetType: String, reason: String, details: String) -> Unit
+    onReportListing: (targetId: String, targetType: String, reason: String, details: String) -> Unit,
+    onSubmitProjectClick: () -> Unit = {}
 ) {
     val context = LocalContext.current
     var showRequestModal by remember { mutableStateOf(false) }
@@ -288,37 +291,81 @@ fun ServiceDetailScreen(
                             }
                         }
 
-                        // Primary CTAs: Send Booking Request & Request a Quote
-                        Row(
+                        // Primary CTAs: Send Booking Request, Request a Quote & Submit Your Project
+                        Column(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            Button(
-                                onClick = {
-                                    requestType = "booking"
-                                    showRequestModal = true
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = SkillBlue),
-                                shape = RoundedCornerShape(10.dp),
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(48.dp)
-                                    .testTag("send_booking_request_button")
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
-                                Text("Send Booking Request", fontWeight = FontWeight.Bold)
+                                Button(
+                                    onClick = {
+                                        requestType = "booking"
+                                        showRequestModal = true
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = SkillBlue),
+                                    shape = RoundedCornerShape(10.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(48.dp)
+                                        .testTag("send_booking_request_button")
+                                ) {
+                                    Text(
+                                        text = "Send Booking Request",
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                                OutlinedButton(
+                                    onClick = {
+                                        requestType = "quote"
+                                        showRequestModal = true
+                                    },
+                                    shape = RoundedCornerShape(10.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(48.dp)
+                                        .testTag("request_quote_button")
+                                ) {
+                                    Text(
+                                        text = "Request a Quote",
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
                             }
-                            OutlinedButton(
-                                onClick = {
-                                    requestType = "quote"
-                                    showRequestModal = true
-                                },
+
+                            Button(
+                                onClick = onSubmitProjectClick,
+                                colors = ButtonDefaults.buttonColors(containerColor = SkillSuccessGreen),
                                 shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
                                 modifier = Modifier
-                                    .weight(1f)
+                                    .fillMaxWidth()
                                     .height(48.dp)
-                                    .testTag("request_quote_button")
+                                    .testTag("service_detail_submit_project_button")
                             ) {
-                                Text("Request a Quote", fontWeight = FontWeight.Bold)
+                                Icon(
+                                    Icons.Default.AssignmentTurnedIn,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Submit Your Project (Attach Files, Photos & Docs)",
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Ellipsis
+                                )
                             }
                         }
                     }
@@ -692,7 +739,8 @@ fun ProviderPublicProfileScreen(
     onOpenServiceDetail: (String) -> Unit,
     onMessageProvider: (providerId: String, providerName: String) -> Unit,
     onToggleFavourite: (targetId: String, targetType: String, title: String, subtitle: String, location: String, price: Long) -> Unit,
-    onReportProfile: (targetId: String, targetType: String, reason: String, details: String) -> Unit
+    onReportProfile: (targetId: String, targetType: String, reason: String, details: String) -> Unit,
+    onSubmitProjectClick: () -> Unit = {}
 ) {
     var showReportDialog by remember { mutableStateOf(false) }
 
@@ -942,26 +990,78 @@ fun ProviderPublicProfileScreen(
                     }
 
                     Spacer(modifier = Modifier.height(14.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Button(
-                            onClick = {
-                                val firstService = providerServices.firstOrNull()
-                                if (firstService != null) {
-                                    onOpenServiceDetail(firstService.id)
-                                } else {
-                                    onMessageProvider(displayProvider.userId, displayProvider.displayName)
-                                }
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = SkillBlue),
-                            modifier = Modifier.weight(1f)
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            Text("Request Service")
+                            Button(
+                                onClick = {
+                                    val firstService = providerServices.firstOrNull()
+                                    if (firstService != null) {
+                                        onOpenServiceDetail(firstService.id)
+                                    } else {
+                                        onMessageProvider(displayProvider.userId, displayProvider.displayName)
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = SkillBlue),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(46.dp)
+                            ) {
+                                Text(
+                                    text = "Request Service",
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            OutlinedButton(
+                                onClick = { onMessageProvider(displayProvider.userId, displayProvider.displayName) },
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(46.dp)
+                            ) {
+                                Text(
+                                    text = "Ask for a Quote",
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                         }
-                        OutlinedButton(
-                            onClick = { onMessageProvider(displayProvider.userId, displayProvider.displayName) },
-                            modifier = Modifier.weight(1f)
+
+                        Button(
+                            onClick = onSubmitProjectClick,
+                            colors = ButtonDefaults.buttonColors(containerColor = SkillSuccessGreen),
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                                .testTag("provider_profile_submit_project_button")
                         ) {
-                            Text("Ask for a Quote", color = Color.White)
+                            Icon(
+                                Icons.Default.AssignmentTurnedIn,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Submit Your Project",
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
                     }
                 }

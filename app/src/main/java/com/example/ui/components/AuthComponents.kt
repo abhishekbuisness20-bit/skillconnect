@@ -10,14 +10,17 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
@@ -73,13 +76,16 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.min
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.credentials.ClearCredentialStateRequest
 import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.GetCredentialCancellationException
 import com.example.R
+import com.example.data.model.AuthorizedAdminConfig
 import com.example.data.model.MarketplaceCatalog
 import com.example.ui.theme.SkillBlue
 import com.example.ui.theme.SkillBrandGradient
@@ -99,8 +105,84 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 
 /**
- * Official SkillConnect brand logo using the uploaded interconnected blue-and-green twin-figure
- * emblem and "SkillConnect" wordmark.
+ * Perfectly circular logo container on a clean white (#FFFFFF) background.
+ * Uses ContentScale.Fit (equivalent to CSS object-fit: contain) and proportional
+ * inner padding so the complete original SkillConnect logo and every letter of
+ * the "SkillConnect" brand name fit inside the circle with zero cropping.
+ */
+@Composable
+fun SkillConnectCircularLogo(
+    diameter: Dp,
+    modifier: Modifier = Modifier,
+    elevation: Dp = 2.dp,
+    borderColor: Color = Color(0xFFE2E8F0),
+    imageTestTag: String? = null
+) {
+    val innerPadding = (diameter * 0.14f).coerceAtLeast(6.dp)
+    Surface(
+        color = Color(0xFFFFFFFF),
+        shape = CircleShape,
+        shadowElevation = elevation,
+        modifier = modifier
+            .size(diameter)
+            .aspectRatio(1f)
+            .border(width = 1.dp, color = borderColor, shape = CircleShape)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding),
+            contentAlignment = Alignment.Center
+        ) {
+            Image(
+                painter = painterResource(id = R.drawable.skillconnect_splash_logo_transparent),
+                contentDescription = "SkillConnect Official Logo",
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .then(if (imageTestTag != null) Modifier.testTag(imageTestTag) else Modifier),
+                contentScale = ContentScale.Fit
+            )
+        }
+    }
+}
+
+/**
+ * Full-screen responsive SkillConnect Splash Screen on a pure white (#FFFFFF) canvas.
+ * Displays the complete transparent-background SkillConnect emblem and brand wordmark
+ * centered horizontally and vertically inside a perfectly circular container.
+ */
+@Composable
+fun SkillConnectSplashScreen(
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    androidx.compose.runtime.SideEffect {
+        val window = (context as? Activity)?.window ?: return@SideEffect
+        val insetsController = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
+        insetsController.isAppearanceLightStatusBars = true
+        insetsController.isAppearanceLightNavigationBars = true
+    }
+
+    BoxWithConstraints(
+        modifier = modifier
+            .fillMaxSize()
+            .background(Color(0xFFFFFFFF))
+            .testTag("skillconnect_splash_screen"),
+        contentAlignment = Alignment.Center
+    ) {
+        val circleDiameter = min(maxWidth * 0.72f, maxHeight * 0.50f).coerceIn(180.dp, 340.dp)
+        SkillConnectCircularLogo(
+            diameter = circleDiameter,
+            elevation = 0.dp,
+            borderColor = Color.Transparent,
+            imageTestTag = "skillconnect_splash_logo"
+        )
+    }
+}
+
+/**
+ * Official SkillConnect brand logo using a perfectly circular white container with the
+ * complete original SkillConnect logo and full "SkillConnect" wordmark.
  */
 @Composable
 fun SkillConnectBrandLogo(
@@ -115,14 +197,10 @@ fun SkillConnectBrandLogo(
             .padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Image(
-            painter = painterResource(id = R.drawable.skillconnect_logo_emblem),
-            contentDescription = "SkillConnect Logo",
-            modifier = Modifier
-                .size(if (compact) 36.dp else 44.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .border(1.dp, Color.White.copy(alpha = 0.18f), RoundedCornerShape(10.dp)),
-            contentScale = ContentScale.Crop
+        SkillConnectCircularLogo(
+            diameter = if (compact) 42.dp else 50.dp,
+            elevation = 2.dp,
+            borderColor = if (onNavyHeader) Color.White.copy(alpha = 0.35f) else Color(0xFFE2E8F0)
         )
         Spacer(modifier = Modifier.width(10.dp))
         Column {
@@ -131,20 +209,26 @@ fun SkillConnectBrandLogo(
                     text = "Skill",
                     style = if (compact) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.ExtraBold,
-                    color = if (onNavyHeader) Color.White else MaterialTheme.colorScheme.onSurface
+                    color = if (onNavyHeader) Color.White else Color(0xFF04102E),
+                    maxLines = 1,
+                    softWrap = false
                 )
                 Text(
                     text = "Connect",
                     style = if (compact) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.ExtraBold,
-                    color = if (onNavyHeader) Color(0xFF6EEB38) else SkillSuccessGreen
+                    color = if (onNavyHeader) Color(0xFF6EEB38) else SkillSuccessGreen,
+                    maxLines = 1,
+                    softWrap = false
                 )
             }
             if (!compact) {
                 Text(
                     text = "Your Skills. Your Local Network.",
                     style = MaterialTheme.typography.labelSmall,
-                    color = if (onNavyHeader) Color.White.copy(alpha = 0.78f) else MaterialTheme.colorScheme.onSurfaceVariant
+                    color = if (onNavyHeader) Color.White.copy(alpha = 0.78f) else MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }
@@ -152,33 +236,26 @@ fun SkillConnectBrandLogo(
 }
 
 /**
- * Full horizontal SkillConnect official logo banner displaying the uploaded graphic.
+ * Displays the complete original SkillConnect logo inside a perfectly circular
+ * clean white container with responsive sizing, centered horizontally and vertically,
+ * and sufficient inner padding so no letter of "SkillConnect" is ever cropped.
  */
 @Composable
 fun SkillConnectOfficialLogoBanner(
     modifier: Modifier = Modifier,
-    height: Dp = 96.dp
+    height: Dp = 148.dp
 ) {
-    Surface(
-        color = Color(0xFF04102E),
-        shape = RoundedCornerShape(14.dp),
-        modifier = modifier
-            .border(1.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(14.dp))
+    BoxWithConstraints(
+        modifier = modifier.fillMaxWidth(),
+        contentAlignment = Alignment.Center
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(height)
-                .padding(horizontal = 12.dp, vertical = 6.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Image(
-                painter = painterResource(id = R.drawable.skillconnect_logo_full),
-                contentDescription = "SkillConnect Official Logo",
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Fit
-            )
-        }
+        val circleDiameter = min(maxWidth * 0.56f, height.coerceAtLeast(136.dp)).coerceIn(132.dp, 200.dp)
+        SkillConnectCircularLogo(
+            diameter = circleDiameter,
+            elevation = 4.dp,
+            borderColor = Color(0xFFE2E8F0),
+            imageTestTag = "skillconnect_home_circular_logo"
+        )
     }
 }
 
@@ -360,10 +437,8 @@ fun SkillConnectAuthScreen(
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var cityExpanded by remember { mutableStateOf(false) }
 
-    // Executive Admin Login Card State (Section B)
-    // Only shown after a specific card ("cofounder", "ceo", "founder") is selected
-    var selectedAdminRoleCard by remember { mutableStateOf<String?>(null) }
-    var adminUsernameInput by remember { mutableStateOf("") }
+    // Unified Executive Admin Gmail Login State
+    var showUnifiedAdminPortal by remember { mutableStateOf(false) }
     var adminPasswordInput by remember { mutableStateOf("") }
     var failedAdminAttempts by remember { mutableStateOf(0) }
     var adminLockoutUntilMs by remember { mutableStateOf(0L) }
@@ -402,7 +477,7 @@ fun SkillConnectAuthScreen(
         )
     }
 
-    fun triggerExecutiveAdminSignIn(adminRole: String) {
+    fun triggerUnifiedAdminGmailSignIn() {
         val maxAttempts = 3
         val now = System.currentTimeMillis()
         if (adminLockoutUntilMs > now) {
@@ -418,34 +493,7 @@ fun SkillConnectAuthScreen(
             errorMessage = "Please accept the Terms of Service and Privacy Policy to continue."
             return
         }
-        val cleanUser = adminUsernameInput.trim()
         val cleanPass = adminPasswordInput.trim()
-
-        val validUsername = when (adminRole) {
-            "cofounder" -> cleanUser.equals("Abhay", ignoreCase = true)
-            "ceo" -> cleanUser.equals("Abhay", ignoreCase = true) || cleanUser.equals("Adarsh", ignoreCase = true)
-            "founder" -> cleanUser.equals("Abhisheksingh", ignoreCase = true)
-            else -> false
-        }
-
-        if (!validUsername) {
-            failedAdminAttempts += 1
-            val remaining = (maxAttempts - failedAdminAttempts).coerceAtLeast(0)
-            if (failedAdminAttempts >= maxAttempts) {
-                adminLockoutUntilMs = System.currentTimeMillis() + 60_000L
-                errorMessage = "Invalid username. 3 failed attempts reached — administrative login locked for 60 seconds."
-            } else {
-                val roleTitle = when (adminRole) {
-                    "cofounder" -> "CO-FOUNDER"
-                    "ceo" -> "CEO"
-                    "founder" -> "FOUNDER"
-                    else -> "ADMIN"
-                }
-                errorMessage = "Invalid username for $roleTitle Login. (Attempt $failedAdminAttempts of $maxAttempts — $remaining remaining)"
-            }
-            return
-        }
-
         if (cleanPass.length < 6) {
             failedAdminAttempts += 1
             val remaining = (maxAttempts - failedAdminAttempts).coerceAtLeast(0)
@@ -464,15 +512,33 @@ fun SkillConnectAuthScreen(
             context = context,
             credentialManager = credentialManager,
             onAuthSuccess = {
-                isLoading = false
-                failedAdminAttempts = 0
-                onAdminAuthSuccess(adminRole, cleanUser, cleanPass)
-                onAuthSuccess(
-                    "customer",
-                    selectedCity,
-                    selectedLocality,
-                    if (isHindi) "hi" else "en"
-                )
+                val signedInEmail = Firebase.auth.currentUser?.email.orEmpty().trim()
+                val adminSpec = AuthorizedAdminConfig.resolveForEmail(signedInEmail)
+                if (adminSpec == null) {
+                    // Reject unauthorized Gmail accounts immediately and sign out
+                    failedAdminAttempts += 1
+                    if (failedAdminAttempts >= maxAttempts) {
+                        adminLockoutUntilMs = System.currentTimeMillis() + 60_000L
+                    }
+                    performSignOut(
+                        credentialManager = credentialManager,
+                        onSignOutComplete = {
+                            isLoading = false
+                            errorMessage = "Unauthorized Admin Account: '${signedInEmail.ifBlank { "Google Account" }}' is not an authorized SkillConnect Admin Gmail account. Access is strictly restricted to authorized Founder, Co-Founder, and CEO accounts."
+                        },
+                        scope = scope
+                    )
+                } else {
+                    isLoading = false
+                    failedAdminAttempts = 0
+                    onAdminAuthSuccess(adminSpec.adminRole, adminSpec.defaultUsername, cleanPass)
+                    onAuthSuccess(
+                        "customer",
+                        selectedCity,
+                        selectedLocality,
+                        if (isHindi) "hi" else "en"
+                    )
+                }
             },
             onAuthError = { msg ->
                 isLoading = false
@@ -707,13 +773,13 @@ fun SkillConnectAuthScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .border(
-                            width = if (selectedRole == "customer" && selectedAdminRoleCard == null) 2.dp else 1.dp,
-                            color = if (selectedRole == "customer" && selectedAdminRoleCard == null) SkillBlue else MaterialTheme.colorScheme.outline,
+                            width = if (selectedRole == "customer" && !showUnifiedAdminPortal) 2.dp else 1.dp,
+                            color = if (selectedRole == "customer" && !showUnifiedAdminPortal) SkillBlue else MaterialTheme.colorScheme.outline,
                             shape = RoundedCornerShape(16.dp)
                         )
                         .clickable {
                             selectedRole = "customer"
-                            selectedAdminRoleCard = null
+                            showUnifiedAdminPortal = false
                             onRoleSelectedBeforeAuth("customer")
                         }
                         .testTag("role_customer_chip")
@@ -759,7 +825,7 @@ fun SkillConnectAuthScreen(
                                     )
                                 }
                             }
-                            if (selectedRole == "customer" && selectedAdminRoleCard == null) {
+                            if (selectedRole == "customer" && !showUnifiedAdminPortal) {
                                 Icon(
                                     imageVector = Icons.Default.CheckCircle,
                                     contentDescription = "Selected",
@@ -788,7 +854,7 @@ fun SkillConnectAuthScreen(
                                 .height(50.dp)
                                 .testTag("continue_as_customer_button")
                         ) {
-                            if (isLoading && selectedRole == "customer" && selectedAdminRoleCard == null) {
+                            if (isLoading && selectedRole == "customer" && !showUnifiedAdminPortal) {
                                 CircularProgressIndicator(
                                     modifier = Modifier.size(20.dp),
                                     color = Color.White,
@@ -814,13 +880,13 @@ fun SkillConnectAuthScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .border(
-                            width = if (selectedRole == "provider" && selectedAdminRoleCard == null) 2.dp else 1.dp,
-                            color = if (selectedRole == "provider" && selectedAdminRoleCard == null) SkillPurple else MaterialTheme.colorScheme.outline,
+                            width = if (selectedRole == "provider" && !showUnifiedAdminPortal) 2.dp else 1.dp,
+                            color = if (selectedRole == "provider" && !showUnifiedAdminPortal) SkillPurple else MaterialTheme.colorScheme.outline,
                             shape = RoundedCornerShape(16.dp)
                         )
                         .clickable {
                             selectedRole = "provider"
-                            selectedAdminRoleCard = null
+                            showUnifiedAdminPortal = false
                             onRoleSelectedBeforeAuth("provider")
                         }
                         .testTag("role_provider_chip")
@@ -866,7 +932,7 @@ fun SkillConnectAuthScreen(
                                     )
                                 }
                             }
-                            if (selectedRole == "provider" && selectedAdminRoleCard == null) {
+                            if (selectedRole == "provider" && !showUnifiedAdminPortal) {
                                 Icon(
                                     imageVector = Icons.Default.CheckCircle,
                                     contentDescription = "Selected",
@@ -895,7 +961,7 @@ fun SkillConnectAuthScreen(
                                 .height(50.dp)
                                 .testTag("register_as_provider_button")
                         ) {
-                            if (isLoading && selectedRole == "provider" && selectedAdminRoleCard == null) {
+                            if (isLoading && selectedRole == "provider" && !showUnifiedAdminPortal) {
                                 CircularProgressIndicator(
                                     modifier = Modifier.size(20.dp),
                                     color = Color.White,
@@ -915,230 +981,201 @@ fun SkillConnectAuthScreen(
                 }
 
                 // =========================================================================
-                // SECTION B: THREE SEPARATE ADMINISTRATIVE LOGIN CARDS
-                // 1. CO-FOUNDER
-                // 2. CEO
-                // 3. FOUNDER
-                // Username and password inputs appear ONLY after a specific card is selected.
+                // SECTION B: UNIFIED ADMIN GMAIL LOGIN PAGE
+                // All 3 authorized Admin accounts (Founder, Co-Founder, CEO) use ONE unified
+                // Admin Gmail Login Page. Role is automatically identified on the backend
+                // by authenticated Google email. Unauthorized Gmail accounts are rejected.
                 // =========================================================================
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = if (isHindi) "3. एडमिनिस्ट्रेटिव लॉगिन (Executive Admin Portal)" else "3. Administrative Login Options",
+                    text = if (isHindi) "3. यूनिफाइड एडमिन जीमेल लॉगिन (Unified Admin Gmail Login)" else "3. Unified Admin Gmail Login",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = "Select an administrative role below to enter your username and password.",
+                    text = "Single unified Google Sign-In portal for authorized SkillConnect Founder, Co-Founder, and CEO accounts. Your role and access level are automatically assigned by your authenticated Google email.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
-                data class AdminCardOption(
-                    val roleKey: String,
-                    val roleLabel: String,
-                    val responsibilities: String,
-                    val badgeColor: Color
-                )
-
-                val adminLoginCards = remember {
-                    listOf(
-                        AdminCardOption(
-                            roleKey = "cofounder",
-                            roleLabel = "CO-FOUNDER",
-                            responsibilities = "Profile verification, verification requests, provider/customer document review, routine support, and assigned operational tasks.",
-                            badgeColor = SkillCyan
-                        ),
-                        AdminCardOption(
-                            roleKey = "ceo",
-                            roleLabel = "CEO",
-                            responsibilities = "Business analytics, job activity, bookings, provider/customer statistics, escalated verifications, complaints, payment disputes (refunds up to ₹10,000), and operational management.",
-                            badgeColor = SkillBlue
-                        ),
-                        AdminCardOption(
-                            roleKey = "founder",
-                            roleLabel = "FOUNDER",
-                            responsibilities = "Full platform oversight, admin/role management, high-risk approvals, commission/financial reports, platform settings, audit logs, and emergency controls.",
-                            badgeColor = SkillPurple
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(
+                            width = if (showUnifiedAdminPortal) 2.dp else 1.dp,
+                            color = if (showUnifiedAdminPortal) SkillPurple else MaterialTheme.colorScheme.outline,
+                            shape = RoundedCornerShape(16.dp)
                         )
-                    )
-                }
-
-                adminLoginCards.forEach { card ->
-                    val isCardSelected = selectedAdminRoleCard == card.roleKey
-                    Card(
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .border(
-                                width = if (isCardSelected) 2.dp else 1.dp,
-                                color = if (isCardSelected) card.badgeColor else MaterialTheme.colorScheme.outline,
-                                shape = RoundedCornerShape(16.dp)
-                            )
-                            .clickable {
-                                if (!isCardSelected) {
-                                    selectedAdminRoleCard = card.roleKey
-                                    adminUsernameInput = ""
-                                    adminPasswordInput = ""
-                                    errorMessage = null
-                                }
+                        .clickable {
+                            if (!showUnifiedAdminPortal) {
+                                showUnifiedAdminPortal = true
+                                adminPasswordInput = ""
+                                errorMessage = null
                             }
-                            .testTag("admin_login_card_${card.roleKey}")
+                        }
+                        .testTag("unified_admin_gmail_login_card")
+                ) {
+                    Column(
+                        modifier = Modifier.padding(18.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Column(
-                            modifier = Modifier.padding(18.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
                             Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                modifier = Modifier.weight(1f)
                             ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                Box(
+                                    modifier = Modifier
+                                        .size(42.dp)
+                                        .clip(CircleShape)
+                                        .background(SkillPurple.copy(alpha = 0.15f)),
+                                    contentAlignment = Alignment.Center
                                 ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(40.dp)
-                                            .clip(CircleShape)
-                                            .background(card.badgeColor.copy(alpha = 0.15f)),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Security,
-                                            contentDescription = null,
-                                            tint = card.badgeColor,
-                                            modifier = Modifier.size(20.dp)
-                                        )
-                                    }
+                                    Icon(
+                                        imageVector = Icons.Default.Security,
+                                        contentDescription = null,
+                                        tint = SkillPurple,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
+                                Column {
                                     Text(
-                                        text = card.roleLabel,
+                                        text = "SkillConnect Admin Gmail Portal",
                                         style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.Bold
                                     )
+                                    Text(
+                                        text = "FOUNDER • CO-FOUNDER • CEO",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = SkillPurple,
+                                        fontWeight = FontWeight.Bold
+                                    )
                                 }
-                                if (isCardSelected) {
-                                    Icon(
-                                        imageVector = Icons.Default.CheckCircle,
-                                        contentDescription = "Selected Admin Card",
-                                        tint = card.badgeColor
+                            }
+                            if (showUnifiedAdminPortal) {
+                                Icon(
+                                    imageVector = Icons.Default.CheckCircle,
+                                    contentDescription = "Unified Admin Portal Active",
+                                    tint = SkillPurple
+                                )
+                            }
+                        }
+
+                        Text(
+                            text = "• FOUNDER & CO-FOUNDER: Founder-level Admin Access Group with distinct Founder and Co-Founder identities.\n• CEO: Separate CEO role and CEO-specific dashboard permissions.\n• Unauthorized Gmail accounts are automatically rejected and signed out.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        if (showUnifiedAdminPortal) {
+                            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                            val remainingAttempts = (3 - failedAdminAttempts).coerceAtLeast(0)
+                            Surface(
+                                color = if (remainingAttempts == 0) MaterialTheme.colorScheme.error.copy(alpha = 0.12f) else SkillPurple.copy(alpha = 0.10f),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(10.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "Auto Role Detection via Gmail",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = SkillPurple,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = if (remainingAttempts == 0) {
+                                            "LOCKED (60s Lockout)"
+                                        } else {
+                                            "Max 3 Attempts ($remainingAttempts/3 left)"
+                                        },
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = if (remainingAttempts == 0) MaterialTheme.colorScheme.error else SkillPurple,
+                                        fontWeight = FontWeight.Bold
                                     )
                                 }
                             }
 
-                            Text(
-                                text = card.responsibilities,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            OutlinedTextField(
+                                value = adminPasswordInput,
+                                onValueChange = { adminPasswordInput = it },
+                                label = { Text("Secondary Admin Password") },
+                                placeholder = { Text("Enter admin security password (min 6 chars)") },
+                                singleLine = true,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("unified_admin_password_input")
                             )
 
-                            // Show Username and Password fields ONLY after this specific login card is selected
-                            if (isCardSelected) {
-                                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-                                val remainingAttempts = (3 - failedAdminAttempts).coerceAtLeast(0)
-                                Surface(
-                                    color = if (remainingAttempts == 0) MaterialTheme.colorScheme.error.copy(alpha = 0.12f) else card.badgeColor.copy(alpha = 0.10f),
-                                    shape = RoundedCornerShape(10.dp),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(10.dp),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            text = card.roleLabel,
-                                            style = MaterialTheme.typography.labelMedium,
-                                            color = card.badgeColor,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                        Text(
-                                            text = if (remainingAttempts == 0) {
-                                                "LOCKED (0/3 attempts left)"
-                                            } else {
-                                                "Max 3 Attempts ($remainingAttempts/3 left)"
-                                            },
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = if (remainingAttempts == 0) MaterialTheme.colorScheme.error else card.badgeColor,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    }
-                                }
-
-                                OutlinedTextField(
-                                    value = adminUsernameInput,
-                                    onValueChange = { adminUsernameInput = it },
-                                    label = { Text("${card.roleLabel} Username") },
-                                    placeholder = { Text("Enter username") },
-                                    singleLine = true,
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Button(
+                                    onClick = { triggerUnifiedAdminGmailSignIn() },
+                                    enabled = !isLoading,
+                                    colors = ButtonDefaults.buttonColors(containerColor = SkillPurple),
+                                    shape = RoundedCornerShape(12.dp),
                                     modifier = Modifier
-                                        .fillMaxWidth()
-                                        .testTag("admin_username_input_${card.roleKey}")
-                                )
-
-                                OutlinedTextField(
-                                    value = adminPasswordInput,
-                                    onValueChange = { adminPasswordInput = it },
-                                    label = { Text("${card.roleLabel} Password") },
-                                    placeholder = { Text("Enter password (min 6 chars)") },
-                                    singleLine = true,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .testTag("admin_password_input_${card.roleKey}")
-                                )
-
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    Button(
-                                        onClick = { triggerExecutiveAdminSignIn(card.roleKey) },
-                                        enabled = !isLoading,
-                                        colors = ButtonDefaults.buttonColors(containerColor = card.badgeColor),
-                                        shape = RoundedCornerShape(12.dp),
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .height(48.dp)
-                                            .testTag("admin_submit_button_${card.roleKey}")
-                                    ) {
-                                        Text(
-                                            text = "Sign In as ${card.roleLabel}",
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    }
-                                    OutlinedButton(
-                                        onClick = {
-                                            selectedAdminRoleCard = null
-                                            adminUsernameInput = ""
-                                            adminPasswordInput = ""
-                                        },
-                                        shape = RoundedCornerShape(12.dp),
-                                        modifier = Modifier.height(48.dp)
-                                    ) {
-                                        Text("Close")
-                                    }
-                                }
-                            } else {
-                                OutlinedButton(
-                                    onClick = {
-                                        selectedAdminRoleCard = card.roleKey
-                                        adminUsernameInput = ""
-                                        adminPasswordInput = ""
-                                        errorMessage = null
-                                    },
-                                    shape = RoundedCornerShape(10.dp),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .testTag("select_admin_card_button_${card.roleKey}")
+                                        .weight(1f)
+                                        .height(48.dp)
+                                        .testTag("unified_admin_gmail_submit_button")
                                 ) {
                                     Text(
-                                        text = card.roleLabel,
-                                        fontWeight = FontWeight.SemiBold
+                                        text = "Sign In with Admin Gmail",
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                 }
+                                OutlinedButton(
+                                    onClick = {
+                                        showUnifiedAdminPortal = false
+                                        adminPasswordInput = ""
+                                    },
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.height(48.dp)
+                                ) {
+                                    Text(
+                                        text = "Close",
+                                        maxLines = 1,
+                                        softWrap = false
+                                    )
+                                }
+                            }
+                        } else {
+                            OutlinedButton(
+                                onClick = {
+                                    showUnifiedAdminPortal = true
+                                    adminPasswordInput = ""
+                                    errorMessage = null
+                                },
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(46.dp)
+                                    .testTag("open_unified_admin_portal_button")
+                            ) {
+                                Text(
+                                    text = "Open Unified Admin Gmail Login",
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Ellipsis
+                                )
                             }
                         }
                     }

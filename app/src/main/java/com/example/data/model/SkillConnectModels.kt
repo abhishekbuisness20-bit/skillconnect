@@ -391,6 +391,9 @@ data class AdminAccount(
     val adminRole: String = "cofounder", // "cofounder", "ceo", "founder"
     val displayName: String = "Abhay", // "Abhay", "CEO", "Founder"
     val username: String = "Abhay", // "Abhay", "Adarsh", "Abhisheksingh"
+    val adminEmail: String = "",
+    val accessGroup: String = "", // "founder_admin_group", "ceo_dashboard_group"
+    val permissions: List<String> = emptyList(),
     val passwordVerifierHash: String = "",
     val passwordSalt: String = "",
     val mustChangePassword: Boolean = false,
@@ -401,6 +404,136 @@ data class AdminAccount(
     @ServerTimestamp val createdAt: Timestamp? = null,
     @ServerTimestamp val updatedAt: Timestamp? = null
 )
+
+data class AuthorizedAdminSpec(
+    val email: String,
+    val adminRole: String, // "founder", "cofounder", "ceo"
+    val canonicalAccountId: String, // "ADM-FND-001", "ADM-COF-001", "ADM-CEO-001"
+    val displayName: String, // "Founder", "Abhay", "CEO"
+    val defaultUsername: String, // "Abhisheksingh", "Abhay", "Abhay"
+    val roleLabel: String, // "FOUNDER", "CO-FOUNDER", "CEO"
+    val accessGroup: String, // "founder_admin_group", "ceo_dashboard_group"
+    val accessGroupLabel: String, // "Founder-Level Admin Access Group", "CEO Dashboard Permissions"
+    val permissions: List<String>,
+    val founderSessionPersistent: Boolean
+)
+
+object AuthorizedAdminConfig {
+    const val FOUNDER_EMAIL = "abhishek.buisness20@gmail.com"
+    private const val FOUNDER_EMAIL_CANONICAL_ALT = "abhishekbuisness20@gmail.com"
+    const val COFOUNDER_EMAIL = "abhayskillconnect@gmail.com"
+    const val CEO_EMAIL = "abhaySkillconnect39@gmail.com"
+
+    val FOUNDER_PERMISSIONS = listOf(
+        "all_access",
+        "manage_admins",
+        "manage_users",
+        "manage_listings",
+        "verify_providers",
+        "manage_bookings",
+        "read_delete_messages",
+        "manage_platform_settings",
+        "unlimited_refunds",
+        "resolve_disputes",
+        "resolve_reports",
+        "manage_support",
+        "view_audit_logs"
+    )
+
+    val COFOUNDER_PERMISSIONS = listOf(
+        "founder_group_access",
+        "manage_users",
+        "manage_listings",
+        "verify_providers",
+        "manage_bookings",
+        "read_delete_messages",
+        "manage_platform_settings",
+        "unlimited_refunds",
+        "resolve_disputes",
+        "resolve_reports",
+        "manage_support",
+        "view_audit_logs"
+    )
+
+    val CEO_PERMISSIONS = listOf(
+        "ceo_dashboard_access",
+        "view_analytics",
+        "verify_providers",
+        "manage_bookings",
+        "read_delete_messages",
+        "operational_settings",
+        "refunds_up_to_10000_inr",
+        "resolve_disputes",
+        "resolve_reports",
+        "manage_support",
+        "view_audit_logs"
+    )
+
+    fun resolveForEmail(email: String?): AuthorizedAdminSpec? {
+        val clean = email?.trim()?.lowercase() ?: return null
+        return when (clean) {
+            FOUNDER_EMAIL.lowercase(), FOUNDER_EMAIL_CANONICAL_ALT -> AuthorizedAdminSpec(
+                email = FOUNDER_EMAIL,
+                adminRole = "founder",
+                canonicalAccountId = "ADM-FND-001",
+                displayName = "Founder",
+                defaultUsername = "Abhisheksingh",
+                roleLabel = "FOUNDER",
+                accessGroup = "founder_admin_group",
+                accessGroupLabel = "Founder-Level Admin Access Group",
+                permissions = FOUNDER_PERMISSIONS,
+                founderSessionPersistent = true
+            )
+            COFOUNDER_EMAIL.lowercase() -> AuthorizedAdminSpec(
+                email = COFOUNDER_EMAIL,
+                adminRole = "cofounder",
+                canonicalAccountId = "ADM-COF-001",
+                displayName = "Abhay",
+                defaultUsername = "Abhay",
+                roleLabel = "CO-FOUNDER",
+                accessGroup = "founder_admin_group",
+                accessGroupLabel = "Founder-Level Admin Access Group",
+                permissions = COFOUNDER_PERMISSIONS,
+                founderSessionPersistent = false
+            )
+            CEO_EMAIL.lowercase() -> AuthorizedAdminSpec(
+                email = CEO_EMAIL,
+                adminRole = "ceo",
+                canonicalAccountId = "ADM-CEO-001",
+                displayName = "CEO",
+                defaultUsername = "Abhay",
+                roleLabel = "CEO",
+                accessGroup = "ceo_dashboard_group",
+                accessGroupLabel = "CEO Dashboard Permissions",
+                permissions = CEO_PERMISSIONS,
+                founderSessionPersistent = false
+            )
+            else -> null
+        }
+    }
+
+    fun permissionsForRole(role: String?): List<String> = when (role?.trim()?.lowercase()) {
+        "founder" -> FOUNDER_PERMISSIONS
+        "cofounder" -> COFOUNDER_PERMISSIONS
+        "ceo" -> CEO_PERMISSIONS
+        else -> emptyList()
+    }
+
+    fun accessGroupForRole(role: String?): String = when (role?.trim()?.lowercase()) {
+        "founder", "cofounder" -> "founder_admin_group"
+        "ceo" -> "ceo_dashboard_group"
+        else -> ""
+    }
+
+    fun isAuthorizedAdminEmail(email: String?): Boolean = resolveForEmail(email) != null
+
+    fun isFounderEmail(email: String?): Boolean = resolveForEmail(email)?.adminRole == "founder"
+
+    fun isFounderAccessGroupRole(role: String?): Boolean {
+        val normalized = role?.trim()?.lowercase() ?: return false
+        return normalized == "founder" || normalized == "cofounder"
+    }
+}
 
 @IgnoreExtraProperties
 data class PaymentDispute(
@@ -448,4 +581,187 @@ data class SkillCourseItem(
     val badgeEarned: String,
     val summary: String
 )
+
+data class ProjectAttachmentMeta(
+    val id: String = "",
+    val fileName: String = "",
+    val fileType: String = "document", // "image", "video", "document"
+    val mimeType: String = "application/octet-stream",
+    val fileSizeBytes: Long = 0L,
+    val storagePath: String = "",
+    val downloadURL: String = "",
+    val uploadedBy: String = "",
+    val uploadedAtMs: Long = 0L
+) {
+    val isImage: Boolean
+        get() = fileType.startsWith("image", ignoreCase = true) || mimeType.startsWith("image", ignoreCase = true)
+
+    val isVideo: Boolean
+        get() = fileType.startsWith("video", ignoreCase = true) || mimeType.startsWith("video", ignoreCase = true)
+
+    val formattedSize: String
+        get() = when {
+            fileSizeBytes >= 1024L * 1024L -> String.format("%.2f MB", fileSizeBytes / (1024.0 * 1024.0))
+            fileSizeBytes >= 1024L -> String.format("%.1f KB", fileSizeBytes / 1024.0)
+            fileSizeBytes > 0L -> "$fileSizeBytes B"
+            else -> "Verified File"
+        }
+}
+
+data class ProjectRevisionItem(
+    val id: String = "",
+    val requestedBy: String = "",
+    val note: String = "",
+    val createdAtMs: Long = 0L
+)
+
+fun encodeProjectAttachments(items: List<ProjectAttachmentMeta>): String {
+    return items.take(15).joinToString("||") { item ->
+        val safeName = com.example.util.SecuritySanitizer.sanitizeFileName(item.fileName, 100)
+            .replace("::", " ")
+            .replace("||", " ")
+        val safeMime = com.example.util.SecuritySanitizer.sanitizeMimeType(item.mimeType)
+        val safeSize = com.example.util.SecuritySanitizer.clampAttachmentSizeBytes(item.fileSizeBytes)
+        val safeUrl = com.example.util.SecuritySanitizer.sanitizeUrl(item.downloadURL, 280)
+            .replace("::", " ")
+            .replace("||", " ")
+        listOf(
+            item.id.replace("::", " ").replace("||", " ").take(64),
+            safeName,
+            com.example.util.SecuritySanitizer.sanitizeText(item.fileType, 20).replace("::", " ").replace("||", " "),
+            safeMime,
+            safeSize.toString(),
+            com.example.util.SecuritySanitizer.sanitizeText(item.storagePath, 240).replace("::", " ").replace("||", " "),
+            safeUrl,
+            com.example.util.SecuritySanitizer.sanitizeText(item.uploadedBy, 80).replace("::", " ").replace("||", " "),
+            item.uploadedAtMs.toString()
+        ).joinToString("::")
+    }.take(6000)
+}
+
+fun parseProjectAttachments(encoded: String): List<ProjectAttachmentMeta> {
+    if (encoded.isBlank()) return emptyList()
+    return encoded.split("||").mapNotNull { entry ->
+        val parts = entry.split("::")
+        if (parts.size >= 3) {
+            ProjectAttachmentMeta(
+                id = parts.getOrNull(0).orEmpty(),
+                fileName = parts.getOrNull(1).orEmpty(),
+                fileType = parts.getOrNull(2).orEmpty().ifBlank { "document" },
+                mimeType = parts.getOrNull(3).orEmpty().ifBlank { "application/octet-stream" },
+                fileSizeBytes = parts.getOrNull(4)?.toLongOrNull() ?: 0L,
+                storagePath = parts.getOrNull(5).orEmpty(),
+                downloadURL = parts.getOrNull(6).orEmpty(),
+                uploadedBy = parts.getOrNull(7).orEmpty(),
+                uploadedAtMs = parts.getOrNull(8)?.toLongOrNull() ?: 0L
+            )
+        } else null
+    }
+}
+
+fun encodeProjectRevisions(items: List<ProjectRevisionItem>): String {
+    return items.take(20).joinToString("||") { item ->
+        listOf(
+            item.id.replace("::", " ").replace("||", " ").take(64),
+            com.example.util.SecuritySanitizer.sanitizeText(item.requestedBy, 80).replace("::", " ").replace("||", " "),
+            com.example.util.SecuritySanitizer.sanitizeText(item.note, 400).replace("::", " ").replace("||", " "),
+            item.createdAtMs.toString()
+        ).joinToString("::")
+    }.take(4000)
+}
+
+fun parseProjectRevisions(encoded: String): List<ProjectRevisionItem> {
+    if (encoded.isBlank()) return emptyList()
+    return encoded.split("||").mapNotNull { entry ->
+        val parts = entry.split("::")
+        if (parts.size >= 3) {
+            ProjectRevisionItem(
+                id = parts.getOrNull(0).orEmpty(),
+                requestedBy = parts.getOrNull(1).orEmpty(),
+                note = parts.getOrNull(2).orEmpty(),
+                createdAtMs = parts.getOrNull(3)?.toLongOrNull() ?: 0L
+            )
+        } else null
+    }
+}
+
+@IgnoreExtraProperties
+data class ProjectSubmission(
+    @DocumentId val id: String = "",
+    val projectId: String = "",
+    val projectRef: String = "",
+    val customerId: String = "",
+    val customerName: String = "",
+    val customerEmail: String = "",
+    val customerPhone: String = "",
+    val providerId: String = "",
+    val providerName: String = "",
+    val serviceId: String = "",
+    val serviceTitle: String = "",
+    val category: String = "Graphic Design",
+    val title: String = "",
+    val description: String = "",
+    val requirements: String = "",
+    val budget: Long = 0L,
+    val expectedDeliveryDate: String = "",
+    val additionalInstructions: String = "",
+    val attachments: String = "", // Encoded ProjectAttachmentMeta list
+    val deliveryFiles: String = "", // Encoded ProjectAttachmentMeta list
+    val deliveryNotes: String = "",
+    val status: String = "new_request", // new_request, under_review, accepted, in_progress, work_submitted, revision_requested, completed, rejected
+    val providerResponse: String = "",
+    val revisionRequests: String = "", // Encoded ProjectRevisionItem list
+    val conversationId: String = "",
+    @ServerTimestamp val createdAt: Timestamp? = null,
+    @ServerTimestamp val updatedAt: Timestamp? = null,
+    val completedAt: Timestamp? = null
+) {
+    val effectiveProjectRef: String
+        get() = projectRef.ifBlank {
+            "SC-PRJ-${(projectId.ifBlank { id }).removePrefix("prj_").uppercase().padEnd(8, '0').take(8)}"
+        }
+
+    val projectTitle: String
+        get() = title
+
+    val projectDescription: String
+        get() = description
+
+    val projectRequirements: String
+        get() = requirements
+
+    val serviceCategory: String
+        get() = category
+
+    val budgetInr: Double
+        get() = budget.toDouble()
+
+    val providerResponseMessage: String
+        get() = providerResponse
+
+    val createdAtMs: Long
+        get() = createdAt?.toDate()?.time ?: System.currentTimeMillis()
+
+    val parsedAttachments: List<ProjectAttachmentMeta>
+        get() = parseProjectAttachments(attachments)
+
+    val parsedDeliveryFiles: List<ProjectAttachmentMeta>
+        get() = parseProjectAttachments(deliveryFiles)
+
+    val parsedRevisions: List<ProjectRevisionItem>
+        get() = parseProjectRevisions(revisionRequests)
+
+    val statusDisplayLabel: String
+        get() = when (status) {
+            "new_request" -> "1. New Request"
+            "under_review" -> "2. Under Review"
+            "accepted" -> "3. Accepted"
+            "in_progress" -> "4. In Progress"
+            "work_submitted" -> "5. Work Submitted"
+            "revision_requested" -> "6. Revision Requested"
+            "completed" -> "7. Completed"
+            "rejected" -> "8. Rejected"
+            else -> status.replace("_", " ").uppercase()
+        }
+}
 

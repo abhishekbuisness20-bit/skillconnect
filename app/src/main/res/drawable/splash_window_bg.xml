@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="#FFFFFF" />
+        </shape>
+    </item>
+    <item
+        android:width="240dp"
+        android:height="240dp"
+        android:gravity="center">
+        <shape android:shape="oval">
+            <solid android:color="#FFFFFF" />
+        </shape>
+    </item>
+    <item
+        android:width="180dp"
+        android:height="98dp"
+        android:gravity="center"
+        android:drawable="@drawable/skillconnect_splash_logo_transparent" />
+</layer-list>

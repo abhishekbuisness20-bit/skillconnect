@@ -65,6 +65,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.data.model.MarketplaceCatalog
 import com.example.data.model.PortfolioProjectItem
@@ -408,13 +409,21 @@ fun ProviderOnboardingWizardScreen(
                                 color = Color.White.copy(alpha = 0.85f)
                             )
                         }
+                        Spacer(modifier = Modifier.width(8.dp))
                         OutlinedButton(
                             onClick = {
                                 onSaveStepDraft(buildCurrentDraftProfile(), currentStep)
                                 onExitWizard()
-                            }
+                            },
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
                         ) {
-                            Text("Resume Later", color = Color.White)
+                            Text(
+                                text = "Resume Later",
+                                color = Color.White,
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
                     }
 
@@ -771,11 +780,17 @@ fun ProviderOnboardingWizardScreen(
                                             PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                                         )
                                     },
-                                    modifier = Modifier.weight(1f)
+                                    modifier = Modifier.weight(1f),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp)
                                 ) {
-                                    Icon(Icons.Default.AddPhotoAlternate, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Icon(Icons.Default.AddPhotoAlternate, contentDescription = null, modifier = Modifier.size(16.dp))
                                     Spacer(modifier = Modifier.width(6.dp))
-                                    Text(if (profilePhotoUri.isBlank()) "Pick Profile Photo" else "Photo Selected ✓")
+                                    Text(
+                                        text = if (profilePhotoUri.isBlank()) "Profile Photo" else "Photo Selected ✓",
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
                                 }
                                 OutlinedButton(
                                     onClick = {
@@ -783,11 +798,17 @@ fun ProviderOnboardingWizardScreen(
                                             PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                                         )
                                     },
-                                    modifier = Modifier.weight(1f)
+                                    modifier = Modifier.weight(1f),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp)
                                 ) {
-                                    Icon(Icons.Default.AddPhotoAlternate, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Icon(Icons.Default.AddPhotoAlternate, contentDescription = null, modifier = Modifier.size(16.dp))
                                     Spacer(modifier = Modifier.width(6.dp))
-                                    Text(if (coverBannerUri.isBlank()) "Pick Cover Banner" else "Banner Selected ✓")
+                                    Text(
+                                        text = if (coverBannerUri.isBlank()) "Cover Banner" else "Banner Selected ✓",
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
                                 }
                             }
 
@@ -815,9 +836,15 @@ fun ProviderOnboardingWizardScreen(
                                             PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                                         )
                                     },
-                                    modifier = Modifier.weight(1f)
+                                    modifier = Modifier.weight(1f),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp)
                                 ) {
-                                    Text(if (newProjectImageUri.isBlank()) "Attach Project Photo" else "Photo Attached ✓")
+                                    Text(
+                                        text = if (newProjectImageUri.isBlank()) "Attach Photo" else "Photo Attached ✓",
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
                                 }
                                 Button(
                                     onClick = {
@@ -839,9 +866,15 @@ fun ProviderOnboardingWizardScreen(
                                     },
                                     enabled = newProjectTitle.isNotBlank() && portfolioList.size < 6,
                                     colors = ButtonDefaults.buttonColors(containerColor = SkillBlue),
-                                    modifier = Modifier.weight(1f)
+                                    modifier = Modifier.weight(1f),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp)
                                 ) {
-                                    Text("Add to Portfolio")
+                                    Text(
+                                        text = "Add to Portfolio",
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
                                 }
                             }
 
@@ -1007,34 +1040,94 @@ fun ProviderOnboardingWizardScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("Step 8 — Review & Submit", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                                OutlinedButton(onClick = { isPreviewOpen = !isPreviewOpen }) {
+                                Text(
+                                    text = "Step 8 — Review & Submit",
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                OutlinedButton(
+                                    onClick = { isPreviewOpen = !isPreviewOpen },
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                                ) {
                                     Icon(Icons.Default.Preview, contentDescription = null, modifier = Modifier.size(16.dp))
                                     Spacer(modifier = Modifier.width(4.dp))
-                                    Text(if (isPreviewOpen) "Hide Preview" else "Preview Profile")
+                                    Text(
+                                        text = if (isPreviewOpen) "Hide Preview" else "Preview Profile",
+                                        maxLines = 1,
+                                        softWrap = false
+                                    )
                                 }
                             }
 
                             Surface(
                                 color = SkillBlue.copy(alpha = 0.08f),
-                                shape = RoundedCornerShape(12.dp),
+                                shape = RoundedCornerShape(14.dp),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    Text("7-Point Profile Completion Score: $pct%", fontWeight = FontWeight.Bold, color = SkillBlue)
-                                    checklist.forEach { check ->
-                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                            Icon(
-                                                imageVector = Icons.Default.CheckCircle,
-                                                contentDescription = null,
-                                                tint = if (check.isDone) SkillSuccessGreen else SkillWarningAmber,
-                                                modifier = Modifier.size(16.dp)
-                                            )
+                                Column(
+                                    modifier = Modifier.padding(16.dp),
+                                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "Profile Completion Checklist",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = SkillBlue,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        Surface(
+                                            color = if (pct == 100) SkillSuccessGreen.copy(alpha = 0.16f) else SkillBlue.copy(alpha = 0.16f),
+                                            shape = RoundedCornerShape(50)
+                                        ) {
                                             Text(
-                                                text = check.label,
-                                                style = MaterialTheme.typography.bodySmall,
-                                                fontWeight = if (check.isDone) FontWeight.SemiBold else FontWeight.Normal
+                                                text = "$pct%",
+                                                style = MaterialTheme.typography.labelLarge,
+                                                fontWeight = FontWeight.ExtraBold,
+                                                color = if (pct == 100) SkillSuccessGreen else SkillBlue,
+                                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                                                maxLines = 1,
+                                                softWrap = false
                                             )
+                                        }
+                                    }
+
+                                    LinearProgressIndicator(
+                                        progress = { pct / 100f },
+                                        color = if (pct == 100) SkillSuccessGreen else SkillBlue,
+                                        trackColor = SkillBlue.copy(alpha = 0.18f),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(8.dp)
+                                            .clip(RoundedCornerShape(50))
+                                    )
+
+                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        checklist.forEach { check ->
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.CheckCircle,
+                                                    contentDescription = null,
+                                                    tint = if (check.isDone) SkillSuccessGreen else SkillWarningAmber,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                                Text(
+                                                    text = check.label,
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    fontWeight = if (check.isDone) FontWeight.SemiBold else FontWeight.Normal,
+                                                    modifier = Modifier.weight(1f)
+                                                )
+                                            }
                                         }
                                     }
                                 }
@@ -1082,36 +1175,61 @@ fun ProviderOnboardingWizardScreen(
 
                     HorizontalDivider()
 
-                    // Bottom Wizard Action Buttons: Previous, Save Draft, Next / Submit for Verification
-                    Row(
+                    // Bottom Wizard Action Buttons: Stack Primary Submit/Next Full-Width Below Previous & Save Draft Row
+                    Column(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        if (currentStep > 1) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            if (currentStep > 1) {
+                                OutlinedButton(
+                                    onClick = {
+                                        validationError = null
+                                        currentStep -= 1
+                                    },
+                                    shape = RoundedCornerShape(12.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(48.dp)
+                                        .testTag("wizard_previous_btn")
+                                ) {
+                                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "Previous",
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+
                             OutlinedButton(
                                 onClick = {
-                                    validationError = null
-                                    currentStep -= 1
+                                    onSaveStepDraft(buildCurrentDraftProfile(), currentStep)
                                 },
-                                modifier = Modifier.weight(1f)
+                                shape = RoundedCornerShape(12.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(48.dp)
+                                    .testTag("wizard_save_draft_btn")
                             ) {
-                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Previous")
+                                Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Save Draft",
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Ellipsis
+                                )
                             }
-                        }
-
-                        OutlinedButton(
-                            onClick = {
-                                onSaveStepDraft(buildCurrentDraftProfile(), currentStep)
-                            },
-                            modifier = Modifier
-                                .weight(1f)
-                                .testTag("wizard_save_draft_btn")
-                        ) {
-                            Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Save Draft")
                         }
 
                         if (currentStep < 8) {
@@ -1124,13 +1242,22 @@ fun ProviderOnboardingWizardScreen(
                                     }
                                 },
                                 colors = ButtonDefaults.buttonColors(containerColor = SkillBlue),
+                                shape = RoundedCornerShape(12.dp),
+                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                                 modifier = Modifier
-                                    .weight(1.2f)
+                                    .fillMaxWidth()
+                                    .height(50.dp)
                                     .testTag("wizard_next_step_btn")
                             ) {
-                                Text("Next Step", fontWeight = FontWeight.Bold)
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Text(
+                                    text = "Next Step",
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, modifier = Modifier.size(18.dp))
                             }
                         } else {
                             Button(
@@ -1150,13 +1277,22 @@ fun ProviderOnboardingWizardScreen(
                                     }
                                 },
                                 colors = ButtonDefaults.buttonColors(containerColor = SkillSuccessGreen),
+                                shape = RoundedCornerShape(12.dp),
+                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                                 modifier = Modifier
-                                    .weight(1.5f)
+                                    .fillMaxWidth()
+                                    .height(52.dp)
                                     .testTag("wizard_submit_verification_btn")
                             ) {
                                 Icon(Icons.Default.VerifiedUser, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Submit for Verification", fontWeight = FontWeight.Bold)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Submit for Verification",
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Ellipsis
+                                )
                             }
                         }
                     }
