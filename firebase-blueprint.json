@@ -1,0 +1,323 @@
+{
+  "entities": {
+    "UserProfileDoc": {
+      "title": "UserProfileDoc",
+      "description": "Authenticated user profile and customization settings scoped to the user's UID.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "The Firebase Auth UID of the profile owner."
+        },
+        "name": {
+          "type": "string",
+          "description": "Full display name of the user."
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "Email address of the user (PII - owner/admin only)."
+        },
+        "phone": {
+          "type": "string",
+          "description": "Phone number of the user (PII - owner/admin only)."
+        },
+        "role": {
+          "type": "string",
+          "enum": ["CUSTOMER", "SERVICE_PROVIDER", "ADMIN"],
+          "description": "Active marketplace role of the user."
+        },
+        "city": {
+          "type": "string",
+          "description": "City in India."
+        },
+        "state": {
+          "type": "string",
+          "description": "State in India."
+        },
+        "avatarInitials": {
+          "type": "string",
+          "description": "2-letter avatar initials."
+        },
+        "profilePhotoUri": {
+          "type": "string",
+          "description": "Optional URI of the user's profile photo."
+        },
+        "coverPhotoUri": {
+          "type": "string",
+          "description": "Optional URI of the user's cover banner photo."
+        },
+        "professionalHeadline": {
+          "type": "string",
+          "description": "Professional headline or tagline."
+        },
+        "bio": {
+          "type": "string",
+          "description": "About/bio description."
+        },
+        "skills": {
+          "type": "array",
+          "description": "Bounded list of skill tags (max 20)."
+        },
+        "experienceYears": {
+          "type": "integer",
+          "description": "Years of professional experience."
+        },
+        "education": {
+          "type": "string",
+          "description": "Educational credentials or certifications."
+        },
+        "portfolioLinks": {
+          "type": "array",
+          "description": "Bounded list of portfolio URLs (max 10)."
+        },
+        "socialGithub": {
+          "type": "string",
+          "description": "GitHub username."
+        },
+        "socialLinkedin": {
+          "type": "string",
+          "description": "LinkedIn handle."
+        },
+        "socialTwitter": {
+          "type": "string",
+          "description": "Twitter/X handle."
+        },
+        "contactPreference": {
+          "type": "string",
+          "description": "Preferred communication channel."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the profile was created (FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the profile was last updated (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": ["userId", "name", "email", "role", "createdAt", "updatedAt"]
+    },
+    "WorkRequestDoc": {
+      "title": "WorkRequestDoc",
+      "description": "A service work request created by an authenticated customer.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "The Firebase Auth UID of the customer who created the request."
+        },
+        "customerName": {
+          "type": "string",
+          "description": "Display name of the customer."
+        },
+        "providerId": {
+          "type": "string",
+          "description": "ID of the target service provider."
+        },
+        "providerName": {
+          "type": "string",
+          "description": "Display name of the service provider."
+        },
+        "title": {
+          "type": "string",
+          "description": "Short title of the work request."
+        },
+        "description": {
+          "type": "string",
+          "description": "Detailed scope of work."
+        },
+        "category": {
+          "type": "string",
+          "description": "Marketplace category name."
+        },
+        "budgetInr": {
+          "type": "integer",
+          "description": "Project budget in INR."
+        },
+        "deadline": {
+          "type": "string",
+          "description": "Expected delivery deadline."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["PENDING", "ACCEPTED", "IN_PROGRESS", "COMPLETED", "DECLINED"],
+          "description": "Lifecycle status of the work request."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Optional status notes."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the request was created (FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the request was last updated (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": ["userId", "customerName", "providerId", "providerName", "title", "description", "category", "budgetInr", "deadline", "status", "createdAt", "updatedAt"]
+    },
+    "AdminRoleDoc": {
+      "title": "AdminRoleDoc",
+      "description": "Strict role-based assignment for verified administrators (FOUNDER, CEO, ADMIN).",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Firebase Auth UID of the administrator."
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "Authorized administrator email."
+        },
+        "role": {
+          "type": "string",
+          "enum": ["FOUNDER", "CEO", "ADMIN"],
+          "description": "Assigned administrative level."
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Full display title of the administrator."
+        },
+        "isActive": {
+          "type": "boolean",
+          "description": "Whether administrative privileges are actively enabled."
+        },
+        "permissions": {
+          "type": "object",
+          "description": "Granular capability flags."
+        },
+        "assignedBy": {
+          "type": "string",
+          "description": "UID or email of the appointing administrator."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of role assignment."
+        }
+      },
+      "required": ["uid", "email", "role", "isActive", "updatedAt"]
+    },
+    "AdminAuditLogDoc": {
+      "title": "AdminAuditLogDoc",
+      "description": "Immutable log of administrative operations across Founder, CEO, and Admin dashboards.",
+      "type": "object",
+      "properties": {
+        "adminUid": {
+          "type": "string",
+          "description": "UID of the acting administrator."
+        },
+        "adminEmail": {
+          "type": "string",
+          "format": "email",
+          "description": "Email of the acting administrator."
+        },
+        "roleType": {
+          "type": "string",
+          "enum": ["FOUNDER", "CEO", "ADMIN"],
+          "description": "Role level at time of action."
+        },
+        "action": {
+          "type": "string",
+          "description": "Action performed (e.g., VERIFY_PROVIDER, UPDATE_ROLE, BROADCAST)."
+        },
+        "targetEntityId": {
+          "type": "string",
+          "description": "Optional ID of the affected resource."
+        },
+        "details": {
+          "type": "string",
+          "description": "Contextual description of the action."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the action occurred."
+        }
+      },
+      "required": ["adminUid", "adminEmail", "roleType", "action", "createdAt"]
+    },
+    "PlatformComplaintDoc": {
+      "title": "PlatformComplaintDoc",
+      "description": "Customer and provider complaints managed across multi-level admin dashboards.",
+      "type": "object",
+      "properties": {
+        "reporterId": {
+          "type": "string",
+          "description": "UID of user reporting the issue."
+        },
+        "reporterName": {
+          "type": "string",
+          "description": "Name of reporting user."
+        },
+        "targetProviderId": {
+          "type": "string",
+          "description": "Optional ID of provider being reported."
+        },
+        "reason": {
+          "type": "string",
+          "description": "Subject or dispute reason."
+        },
+        "details": {
+          "type": "string",
+          "description": "Full description of complaint."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["PENDING", "INVESTIGATING", "ESCALATED_TO_CEO", "RESOLVED", "DISMISSED"],
+          "description": "Current dispute status."
+        },
+        "assignedRoleLevel": {
+          "type": "string",
+          "enum": ["FOUNDER", "CEO", "ADMIN"],
+          "description": "Level currently handling ticket."
+        },
+        "resolutionNotes": {
+          "type": "string",
+          "description": "Notes from resolution."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of complaint creation."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of last update."
+        }
+      },
+      "required": ["reporterId", "reporterName", "reason", "details", "status", "assignedRoleLevel", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfileDoc",
+      "description": "User profile documents keyed by Firebase Auth UID."
+    },
+    "/work_requests/{requestId}": {
+      "schema": "WorkRequestDoc",
+      "description": "Work requests created by authenticated users."
+    },
+    "/admin_roles/{uid}": {
+      "schema": "AdminRoleDoc",
+      "description": "Strict role definitions and permissions for administrators."
+    },
+    "/admin_audit_logs/{logId}": {
+      "schema": "AdminAuditLogDoc",
+      "description": "Immutable security and action audit logs."
+    },
+    "/complaints/{complaintId}": {
+      "schema": "PlatformComplaintDoc",
+      "description": "Platform customer support and mediation tickets."
+    }
+  }
+}

@@ -1,0 +1,36 @@
+<resources>
+    <string name="app_name">SkillConnect</string>
+    <string name="app_full_name">SkillConnect</string>
+    <string name="app_tagline">India\'s Premier Multi-Service Skill Marketplace</string>
+
+    <!-- Navigation -->
+    <string name="nav_home">Home</string>
+    <string name="nav_explore">Explore</string>
+    <string name="nav_requests">My Requests</string>
+    <string name="nav_messages">Messages</string>
+    <string name="nav_profile">Profile</string>
+    <string name="nav_dashboard">Dashboard</string>
+    <string name="nav_admin">Admin</string>
+
+    <!-- Roles -->
+    <string name="role_customer">Customer</string>
+    <string name="role_provider">Service Provider</string>
+    <string name="role_admin">Management (Admin)</string>
+
+    <!-- Actions -->
+    <string name="btn_get_started">Get Started</string>
+    <string name="btn_sign_in">Sign In</string>
+    <string name="btn_create_account">Create Account</string>
+    <string name="btn_request_work">Request Work</string>
+    <string name="btn_send_inquiry">Send Inquiry</string>
+    <string name="btn_view_profile">View Profile</string>
+    <string name="btn_accept">Accept</string>
+    <string name="btn_reject">Reject</string>
+    <string name="btn_mark_completed">Mark Completed</string>
+    <string name="btn_logout">Logout</string>
+
+    <!-- Common -->
+    <string name="search_hint">Search skills, services, or providers…</string>
+    <string name="currency_symbol">₹</string>
+    <string name="language_toggle">हिंदी</string>
+</resources>

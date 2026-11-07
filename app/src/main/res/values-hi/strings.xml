@@ -1,0 +1,36 @@
+<resources>
+    <string name="app_name">SkillConnect</string>
+    <string name="app_full_name">SkillConnect</string>
+    <string name="app_tagline">भारत का प्रमुख मल्टी-सर्विस स्किल मार्केटप्लेस</string>
+
+    <!-- Navigation -->
+    <string name="nav_home">होम</string>
+    <string name="nav_explore">खोजें</string>
+    <string name="nav_requests">मेरे अनुरोध</string>
+    <string name="nav_messages">संदेश</string>
+    <string name="nav_profile">प्रोफ़ाइल</string>
+    <string name="nav_dashboard">डैशबोर्ड</string>
+    <string name="nav_admin">एडमिन</string>
+
+    <!-- Roles -->
+    <string name="role_customer">ग्राहक (Customer)</string>
+    <string name="role_provider">सेवा प्रदाता (Provider)</string>
+    <string name="role_admin">प्रबंधन (Admin)</string>
+
+    <!-- Actions -->
+    <string name="btn_get_started">शुरू करें</string>
+    <string name="btn_sign_in">साइन इन करें</string>
+    <string name="btn_create_account">खाता बनाएं</string>
+    <string name="btn_request_work">काम का अनुरोध करें</string>
+    <string name="btn_send_inquiry">पूछताछ भेजें</string>
+    <string name="btn_view_profile">प्रोफ़ाइल देखें</string>
+    <string name="btn_accept">स्वीकार करें</string>
+    <string name="btn_reject">अस्वीकार करें</string>
+    <string name="btn_mark_completed">पूर्ण चिन्हित करें</string>
+    <string name="btn_logout">लॉगआउट</string>
+
+    <!-- Common -->
+    <string name="search_hint">कौशल, सेवा या प्रदाता खोजें…</string>
+    <string name="currency_symbol">₹</string>
+    <string name="language_toggle">English</string>
+</resources>

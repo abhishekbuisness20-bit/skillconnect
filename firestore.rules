@@ -1,0 +1,243 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global default-deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Core Primitives
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isFounder() {
+      return isSignedIn() && (
+        ('role' in request.auth.token && request.auth.token.role == 'FOUNDER') ||
+        (exists(/databases/$(database)/documents/admin_roles/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/admin_roles/$(request.auth.uid)).data.role == 'FOUNDER') ||
+        ('email' in request.auth.token && request.auth.token.email.lower() == 'abhishekbuisness20@gmail.com') ||
+        ('email' in request.auth.token && request.auth.token.email.lower() == 'singhabhishek83072@gmail.com')
+      );
+    }
+
+    function isCeo() {
+      return isFounder() || (
+        isSignedIn() && (
+          ('role' in request.auth.token && request.auth.token.role == 'CEO') ||
+          (exists(/databases/$(database)/documents/admin_roles/$(request.auth.uid)) &&
+           get(/databases/$(database)/documents/admin_roles/$(request.auth.uid)).data.role in ['CEO', 'FOUNDER']) ||
+          ('email' in request.auth.token && request.auth.token.email.lower() == 'abhayskillconnect@gmail.com')
+        )
+      );
+    }
+
+    function isAdmin() {
+      return isCeo() || (
+        isSignedIn() && (
+          ('role' in request.auth.token && request.auth.token.role in ['ADMIN', 'CEO', 'FOUNDER']) ||
+          (exists(/databases/$(database)/documents/admin_roles/$(request.auth.uid)) &&
+           get(/databases/$(database)/documents/admin_roles/$(request.auth.uid)).data.role in ['ADMIN', 'CEO', 'FOUNDER']) ||
+          exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+          ('email' in request.auth.token && request.auth.token.email.lower() in [
+            'abhishekbuisness20@gmail.com',
+            'abhayskillconnect@gmail.com',
+            'abhayskillconnect39@gmail.com',
+            'singhabhishek83072@gmail.com',
+            'abhay@skillconnect.in',
+            'abhay.admin@skillconnect.in',
+            'abhay.ceo@skillconnect.in',
+            'adarsh@skillconnect.in',
+            'adarsh.admin@skillconnect.in',
+            'admin@skillconnectofficial.com'
+          ])
+        )
+      );
+    }
+
+    // Validation Helper: UserProfileDoc
+    function isValidUserProfile(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.userId == request.auth.uid &&
+             data.name is string && data.name.size() >= 1 && data.name.size() <= 100 &&
+             data.email is string && data.email.size() >= 3 && data.email.size() <= 120 &&
+             data.role is string && (data.role in ['CUSTOMER', 'SERVICE_PROVIDER'] || (data.role == 'ADMIN' && isAdmin())) &&
+             (!('phone' in data) || data.phone == null || (data.phone is string && data.phone.size() <= 30)) &&
+             (!('city' in data) || data.city == null || (data.city is string && data.city.size() <= 80)) &&
+             (!('state' in data) || data.state == null || (data.state is string && data.state.size() <= 80)) &&
+             (!('avatarInitials' in data) || data.avatarInitials == null || (data.avatarInitials is string && data.avatarInitials.size() <= 10)) &&
+             (!('profilePhotoUri' in data) || data.profilePhotoUri == null || (data.profilePhotoUri is string && data.profilePhotoUri.size() <= 500)) &&
+             (!('coverPhotoUri' in data) || data.coverPhotoUri == null || (data.coverPhotoUri is string && data.coverPhotoUri.size() <= 500)) &&
+             (!('professionalHeadline' in data) || data.professionalHeadline == null || (data.professionalHeadline is string && data.professionalHeadline.size() <= 150)) &&
+             (!('bio' in data) || data.bio == null || (data.bio is string && data.bio.size() <= 1000)) &&
+             (!('skills' in data) || (data.skills is list && data.skills.size() <= 20 && (data.skills.size() == 0 || (data.skills[0] is string && data.skills[0].size() <= 60)))) &&
+             (!('experienceYears' in data) || (data.experienceYears is int && data.experienceYears >= 0 && data.experienceYears <= 80)) &&
+             (!('education' in data) || data.education == null || (data.education is string && data.education.size() <= 200)) &&
+             (!('portfolioLinks' in data) || (data.portfolioLinks is list && data.portfolioLinks.size() <= 10 && (data.portfolioLinks.size() == 0 || (data.portfolioLinks[0] is string && data.portfolioLinks[0].size() <= 300)))) &&
+             (!('socialGithub' in data) || data.socialGithub == null || (data.socialGithub is string && data.socialGithub.size() <= 100)) &&
+             (!('socialLinkedin' in data) || data.socialLinkedin == null || (data.socialLinkedin is string && data.socialLinkedin.size() <= 100)) &&
+             (!('socialTwitter' in data) || data.socialTwitter == null || (data.socialTwitter is string && data.socialTwitter.size() <= 100)) &&
+             (!('contactPreference' in data) || data.contactPreference == null || (data.contactPreference is string && data.contactPreference.size() <= 100)) &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    // Validation Helper: WorkRequestDoc
+    function isValidWorkRequest(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.userId == request.auth.uid &&
+             data.customerName is string && data.customerName.size() >= 1 && data.customerName.size() <= 100 &&
+             data.providerId is string && data.providerId.size() >= 1 && data.providerId.size() <= 128 &&
+             data.providerName is string && data.providerName.size() >= 1 && data.providerName.size() <= 100 &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 150 &&
+             data.description is string && data.description.size() >= 1 && data.description.size() <= 1000 &&
+             data.category is string && data.category.size() >= 1 && data.category.size() <= 100 &&
+             data.budgetInr is int && data.budgetInr >= 0 && data.budgetInr <= 100000000 &&
+             data.deadline is string && data.deadline.size() >= 1 && data.deadline.size() <= 80 &&
+             data.status is string && data.status in ['PENDING', 'ACCEPTED', 'IN_PROGRESS', 'COMPLETED', 'DECLINED'] &&
+             (!('notes' in data) || data.notes == null || (data.notes is string && data.notes.size() <= 500)) &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    // Validation Helper: AdminRoleDoc
+    function isValidAdminRole(data) {
+      return data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128 &&
+             data.email is string && data.email.size() >= 3 && data.email.size() <= 120 &&
+             data.role is string && data.role in ['FOUNDER', 'CEO', 'ADMIN'] &&
+             data.isActive is bool &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    // Validation Helper: AdminAuditLogDoc
+    function isValidAuditLog(data) {
+      return data.adminUid is string && data.adminUid.size() >= 1 && data.adminUid.size() <= 128 &&
+             data.adminEmail is string && data.adminEmail.size() >= 3 && data.adminEmail.size() <= 120 &&
+             data.roleType is string && data.roleType in ['FOUNDER', 'CEO', 'ADMIN'] &&
+             data.action is string && data.action.size() >= 1 && data.action.size() <= 100 &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    // Validation Helper: PlatformComplaintDoc
+    function isValidComplaint(data) {
+      return data.reporterId is string && data.reporterId.size() >= 1 && data.reporterId.size() <= 128 &&
+             data.reporterName is string && data.reporterName.size() >= 1 && data.reporterName.size() <= 100 &&
+             data.reason is string && data.reason.size() >= 1 && data.reason.size() <= 150 &&
+             data.details is string && data.details.size() >= 1 && data.details.size() <= 1000 &&
+             data.status is string && data.status in ['PENDING', 'INVESTIGATING', 'ESCALATED_TO_CEO', 'RESOLVED', 'DISMISSED'] &&
+             data.assignedRoleLevel is string && data.assignedRoleLevel in ['FOUNDER', 'CEO', 'ADMIN'] &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    // Collection: /users/{userId}
+    match /users/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && (request.auth.uid == userId || isAdmin());
+      allow list: if isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+
+      allow create: if isSignedIn() &&
+                       isValidId(userId) &&
+                       request.auth.uid == userId &&
+                       incoming().keys().hasAll(['userId', 'name', 'email', 'role', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'name', 'email', 'phone', 'role', 'city', 'state',
+                         'avatarInitials', 'profilePhotoUri', 'coverPhotoUri',
+                         'professionalHeadline', 'bio', 'skills', 'experienceYears',
+                         'education', 'portfolioLinks', 'socialGithub', 'socialLinkedin',
+                         'socialTwitter', 'contactPreference', 'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidUserProfile(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(userId) &&
+                       isValidUserProfile(incoming()) && (
+                         (
+                           request.auth.uid == userId &&
+                           incoming().userId == existing().userId &&
+                           incoming().createdAt == existing().createdAt &&
+                           incoming().diff(existing()).affectedKeys().hasOnly([
+                             'name', 'email', 'phone', 'role', 'city', 'state',
+                             'avatarInitials', 'profilePhotoUri', 'coverPhotoUri',
+                             'professionalHeadline', 'bio', 'skills', 'experienceYears',
+                             'education', 'portfolioLinks', 'socialGithub', 'socialLinkedin',
+                             'socialTwitter', 'contactPreference', 'updatedAt'
+                           ])
+                         ) || isAdmin()
+                       );
+
+      allow delete: if isSignedIn() && isValidId(userId) && (request.auth.uid == userId || isFounder());
+    }
+
+    // Collection: /work_requests/{requestId}
+    match /work_requests/{requestId} {
+      allow get: if isSignedIn() && isValidId(requestId) && (existing().userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+
+      allow create: if isSignedIn() &&
+                       isValidId(requestId) &&
+                       incoming().keys().hasAll([
+                         'userId', 'customerName', 'providerId', 'providerName',
+                         'title', 'description', 'category', 'budgetInr',
+                         'deadline', 'status', 'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'customerName', 'providerId', 'providerName',
+                         'title', 'description', 'category', 'budgetInr',
+                         'deadline', 'status', 'notes', 'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidWorkRequest(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(requestId) &&
+                       isValidWorkRequest(incoming()) &&
+                       (existing().status != 'COMPLETED' || isAdmin()) && (
+                         (
+                           existing().userId == request.auth.uid &&
+                           incoming().userId == existing().userId &&
+                           incoming().createdAt == existing().createdAt &&
+                           incoming().diff(existing()).affectedKeys().hasOnly([
+                             'status', 'notes', 'title', 'description', 'budgetInr', 'deadline', 'updatedAt'
+                           ])
+                         ) || isAdmin()
+                       );
+
+      allow delete: if isSignedIn() && isValidId(requestId) && (existing().userId == request.auth.uid || isCeo());
+    }
+
+    // Collection: /admin_roles/{uid}
+    match /admin_roles/{uid} {
+      allow get, list: if isSignedIn() && isAdmin();
+      allow create, update, delete: if isSignedIn() && isFounder() && isValidId(uid) && isValidAdminRole(incoming());
+    }
+
+    // Collection: /admin_audit_logs/{logId}
+    match /admin_audit_logs/{logId} {
+      allow get, list: if isSignedIn() && (isCeo() || isFounder());
+      allow create: if isSignedIn() && isAdmin() && isValidId(logId) && isValidAuditLog(incoming());
+      allow update, delete: if false; // Immutable audit trail
+    }
+
+    // Collection: /complaints/{complaintId}
+    match /complaints/{complaintId} {
+      allow get: if isSignedIn() && (existing().reporterId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().reporterId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && isValidId(complaintId) && incoming().reporterId == request.auth.uid && isValidComplaint(incoming());
+      allow update: if isSignedIn() && isValidId(complaintId) && isAdmin() && isValidComplaint(incoming());
+      allow delete: if isSignedIn() && isCeo();
+    }
+  }
+}

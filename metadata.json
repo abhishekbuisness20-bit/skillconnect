@@ -1,0 +1,6 @@
+{
+  "name": "SkillConnect",
+  "description": "SkillConnect Official – Complete Professional Indian Skill Marketplace connecting customers, verified service providers, and companies.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
