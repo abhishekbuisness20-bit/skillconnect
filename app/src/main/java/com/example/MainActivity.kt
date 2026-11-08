@@ -41,6 +41,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         configureAppCheck(this, intent)
+        com.example.data.FirebaseTokenManager.initializeAndVerify(
+            context = this,
+            firestoreRepository = SkillConnectFirestoreRepository(this)
+        )
         enableEdgeToEdge()
         setContent {
             val uiState by marketplaceViewModel.uiState.collectAsState()

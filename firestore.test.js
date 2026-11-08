@@ -205,3 +205,77 @@ test("Admin: can create audit log but cannot modify or delete it", async () => {
   );
 });
 
+test("Authenticated user: can sync their own valid FCM token with verified projectId and senderId", async () => {
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
+  const now = new Date(Date.now() - 1000);
+  await assertSucceeds(
+    aliceDb
+      .collection("users")
+      .doc(ALICE_UID)
+      .collection("fcm_tokens")
+      .doc("android_primary")
+      .set({
+        userId: ALICE_UID,
+        fcmToken: "fcm_valid_registration_token_sample_1234567890",
+        projectId: "gen-lang-client-0778223582",
+        senderId: "800529463187",
+        packageName: "com.aistudio.skillconnect.market",
+        platform: "ANDROID",
+        isActive: true,
+        updatedAt: now,
+      })
+  );
+  await assertSucceeds(
+    aliceDb
+      .collection("users")
+      .doc(ALICE_UID)
+      .collection("fcm_tokens")
+      .doc("android_primary")
+      .get()
+  );
+});
+
+test("Authenticated user: cannot sync FCM token with mismatched senderId or for another user", async () => {
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
+  const now = new Date(Date.now() - 1000);
+
+  // Wrong senderId must fail
+  await assertFails(
+    aliceDb
+      .collection("users")
+      .doc(ALICE_UID)
+      .collection("fcm_tokens")
+      .doc("android_primary")
+      .set({
+        userId: ALICE_UID,
+        fcmToken: "fcm_valid_registration_token_sample_1234567890",
+        projectId: "gen-lang-client-0778223582",
+        senderId: "999999999999",
+        packageName: "com.aistudio.skillconnect.market",
+        platform: "ANDROID",
+        isActive: true,
+        updatedAt: now,
+      })
+  );
+
+  // Writing to Bob's fcm_tokens subcollection must fail
+  await assertFails(
+    aliceDb
+      .collection("users")
+      .doc(BOB_UID)
+      .collection("fcm_tokens")
+      .doc("android_primary")
+      .set({
+        userId: BOB_UID,
+        fcmToken: "fcm_valid_registration_token_sample_1234567890",
+        projectId: "gen-lang-client-0778223582",
+        senderId: "800529463187",
+        packageName: "com.aistudio.skillconnect.market",
+        platform: "ANDROID",
+        isActive: true,
+        updatedAt: now,
+      })
+  );
+});
+
+

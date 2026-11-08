@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "800529463187",
+    "project_id": "gen-lang-client-0778223582",
+    "storage_bucket": "gen-lang-client-0778223582.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:800529463187:android:e2715c4819dbe5b6201a66",
+        "android_client_info": {
+          "package_name": "com.aistudio.skillconnect.market"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "800529463187-s250f6g5bdj9a4cfjah0ise5a2at9r6g.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.aistudio.skillconnect.market",
+            "certificate_hash": "b8df6897473765ec0542384fec2df5680d24f9b0"
+          }
+        },
+        {
+          "client_id": "800529463187-h1cvfmuson6ql5b52ta4c6ph6ssns8r7.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA4YcE3YRI18pOfv0RCP2SmFLgk9KfxgDI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "800529463187-h1cvfmuson6ql5b52ta4c6ph6ssns8r7.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

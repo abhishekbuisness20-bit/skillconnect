@@ -274,12 +274,19 @@ data class InAppNotification(
     val category: String = "Platform"
 )
 
+data class MapsGroundedPlace(
+    val title: String,
+    val uri: String,
+    val placeId: String = ""
+)
+
 data class AiChatMessage(
     val id: String,
     val isFromUser: Boolean,
     val text: String,
     val timestampMillis: Long = System.currentTimeMillis(),
-    val isFallback: Boolean = false
+    val isFallback: Boolean = false,
+    val mapsPlaces: List<MapsGroundedPlace> = emptyList()
 )
 
 sealed interface AiAssistantUiState {

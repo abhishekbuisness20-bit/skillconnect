@@ -14,6 +14,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Logout
@@ -27,9 +29,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.*
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -135,6 +139,12 @@ fun ChatScreen(
                         .padding(horizontal = 12.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    val submitChatMsg = {
+                        if (inputText.isNotBlank()) {
+                            onSendMessage(inputText.trim())
+                            inputText = ""
+                        }
+                    }
                     OutlinedTextField(
                         value = inputText,
                         onValueChange = { inputText = it },
@@ -148,20 +158,28 @@ fun ChatScreen(
                             unfocusedTextColor = TextWhite
                         ),
                         shape = RoundedCornerShape(20.dp),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                        keyboardActions = KeyboardActions(onSend = { submitChatMsg() }),
                         modifier = Modifier
                             .weight(1f)
+                            .onPreviewKeyEvent { event ->
+                                if (event.type == KeyEventType.KeyDown &&
+                                    (event.key == Key.Enter || event.key == Key.NumPadEnter)
+                                ) {
+                                    submitChatMsg()
+                                    true
+                                } else {
+                                    false
+                                }
+                            }
                             .testTag("chat_input_field")
                     )
 
                     Spacer(modifier = Modifier.width(8.dp))
 
                     IconButton(
-                        onClick = {
-                            if (inputText.isNotBlank()) {
-                                onSendMessage(inputText)
-                                inputText = ""
-                            }
-                        },
+                        onClick = { submitChatMsg() },
                         modifier = Modifier
                             .size(44.dp)
                             .clip(CircleShape)
@@ -1235,6 +1253,8 @@ fun EditProfileScreen(
                             value = name,
                             onValueChange = { name = it },
                             label = { Text("Full Name") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                             modifier = Modifier.fillMaxWidth().testTag("edit_name_input"),
                             shape = RoundedCornerShape(10.dp)
                         )
@@ -1244,6 +1264,8 @@ fun EditProfileScreen(
                             onValueChange = { headline = it },
                             label = { Text("Professional Headline") },
                             placeholder = { Text("e.g. Senior Mobile App Architect & UI Designer") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                             modifier = Modifier.fillMaxWidth().testTag("edit_headline_input"),
                             shape = RoundedCornerShape(10.dp)
                         )
@@ -1256,6 +1278,8 @@ fun EditProfileScreen(
                                 value = city,
                                 onValueChange = { city = it },
                                 label = { Text("City") },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                                 modifier = Modifier.weight(1f).testTag("edit_city_input"),
                                 shape = RoundedCornerShape(10.dp)
                             )
@@ -1263,6 +1287,8 @@ fun EditProfileScreen(
                                 value = state,
                                 onValueChange = { state = it },
                                 label = { Text("State") },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                                 modifier = Modifier.weight(1f).testTag("edit_state_input"),
                                 shape = RoundedCornerShape(10.dp)
                             )
@@ -1272,6 +1298,8 @@ fun EditProfileScreen(
                             value = phone,
                             onValueChange = { phone = it },
                             label = { Text("Mobile Phone") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                             modifier = Modifier.fillMaxWidth().testTag("edit_phone_input"),
                             shape = RoundedCornerShape(10.dp)
                         )
@@ -1308,6 +1336,12 @@ fun EditProfileScreen(
             item {
                 GlassCard {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        val commitSkillInput = {
+                            if (newSkillInput.isNotBlank() && !skillsList.contains(newSkillInput.trim())) {
+                                skillsList.add(newSkillInput.trim())
+                                newSkillInput = ""
+                            }
+                        }
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically
@@ -1316,17 +1350,27 @@ fun EditProfileScreen(
                                 value = newSkillInput,
                                 onValueChange = { newSkillInput = it },
                                 placeholder = { Text("Add a skill (e.g. Jetpack Compose, Figma)") },
-                                modifier = Modifier.weight(1f).testTag("add_skill_input"),
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                                keyboardActions = KeyboardActions(onDone = { commitSkillInput() }),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .onPreviewKeyEvent { event ->
+                                        if (event.type == KeyEventType.KeyDown &&
+                                            (event.key == Key.Enter || event.key == Key.NumPadEnter)
+                                        ) {
+                                            commitSkillInput()
+                                            true
+                                        } else {
+                                            false
+                                        }
+                                    }
+                                    .testTag("add_skill_input"),
                                 shape = RoundedCornerShape(10.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             IconButton(
-                                onClick = {
-                                    if (newSkillInput.isNotBlank() && !skillsList.contains(newSkillInput.trim())) {
-                                        skillsList.add(newSkillInput.trim())
-                                        newSkillInput = ""
-                                    }
-                                },
+                                onClick = { commitSkillInput() },
                                 modifier = Modifier
                                     .size(48.dp)
                                     .clip(RoundedCornerShape(10.dp))
@@ -1383,6 +1427,8 @@ fun EditProfileScreen(
                             value = experienceYears,
                             onValueChange = { experienceYears = it },
                             label = { Text("Years of Experience") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                             modifier = Modifier.fillMaxWidth().testTag("edit_experience_input"),
                             shape = RoundedCornerShape(10.dp)
                         )
@@ -1392,6 +1438,8 @@ fun EditProfileScreen(
                             onValueChange = { education = it },
                             label = { Text("Education / Certifications") },
                             placeholder = { Text("e.g. Master of Design, NID or IIT Madras") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                             modifier = Modifier.fillMaxWidth().testTag("edit_education_input"),
                             shape = RoundedCornerShape(10.dp)
                         )
@@ -1407,6 +1455,12 @@ fun EditProfileScreen(
             item {
                 GlassCard {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        val commitLinkInput = {
+                            if (newLinkInput.isNotBlank() && !portfolioLinksList.contains(newLinkInput.trim())) {
+                                portfolioLinksList.add(newLinkInput.trim())
+                                newLinkInput = ""
+                            }
+                        }
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically
@@ -1415,17 +1469,27 @@ fun EditProfileScreen(
                                 value = newLinkInput,
                                 onValueChange = { newLinkInput = it },
                                 placeholder = { Text("Add portfolio URL (https://...)") },
-                                modifier = Modifier.weight(1f).testTag("add_link_input"),
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                                keyboardActions = KeyboardActions(onDone = { commitLinkInput() }),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .onPreviewKeyEvent { event ->
+                                        if (event.type == KeyEventType.KeyDown &&
+                                            (event.key == Key.Enter || event.key == Key.NumPadEnter)
+                                        ) {
+                                            commitLinkInput()
+                                            true
+                                        } else {
+                                            false
+                                        }
+                                    }
+                                    .testTag("add_link_input"),
                                 shape = RoundedCornerShape(10.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             IconButton(
-                                onClick = {
-                                    if (newLinkInput.isNotBlank() && !portfolioLinksList.contains(newLinkInput.trim())) {
-                                        portfolioLinksList.add(newLinkInput.trim())
-                                        newLinkInput = ""
-                                    }
-                                },
+                                onClick = { commitLinkInput() },
                                 modifier = Modifier
                                     .size(48.dp)
                                     .clip(RoundedCornerShape(10.dp))
@@ -1459,6 +1523,8 @@ fun EditProfileScreen(
                             value = github,
                             onValueChange = { github = it },
                             label = { Text("GitHub Username / Handle") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(10.dp)
                         )
@@ -1467,6 +1533,8 @@ fun EditProfileScreen(
                             value = linkedin,
                             onValueChange = { linkedin = it },
                             label = { Text("LinkedIn Profile / Username") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(10.dp)
                         )
@@ -1475,6 +1543,8 @@ fun EditProfileScreen(
                             value = twitter,
                             onValueChange = { twitter = it },
                             label = { Text("Twitter / X Handle") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(10.dp)
                         )

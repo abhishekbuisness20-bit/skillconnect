@@ -135,6 +135,79 @@ class SkillConnectRepositoryRuleTest : FirestoreEmulatorTestBase() {
     }
   }
 
+  @Test
+  fun syncAndGetFcmToken_authenticatedOwner_succeedsAndDeactivatesCleanly() = runBlocking {
+    val aliceUid = signInTestUser(ALICE_EMAIL)
+    val repository = SkillConnectFirestoreRepository(firestore)
+    val sampleToken = "fcm_token_valid_registration_sample_9876543210"
+
+    val syncRes = withTimeout(DEFAULT_TIMEOUT_MS) {
+      repository.syncFcmToken(sampleToken, tokenId = "android_primary")
+    }
+    assertTrue("Expected syncFcmToken to succeed: ${syncRes.exceptionOrNull()}", syncRes.isSuccess)
+
+    val fetchRes = withTimeout(DEFAULT_TIMEOUT_MS) {
+      repository.getFcmTokenDoc(aliceUid, tokenId = "android_primary")
+    }
+    assertTrue(fetchRes.isSuccess)
+    val doc = fetchRes.getOrNull()
+    assertNotNull(doc)
+    assertEquals(aliceUid, doc?.userId)
+    assertEquals(sampleToken, doc?.fcmToken)
+    assertEquals(FirebaseTokenManager.EXPECTED_PROJECT_ID, doc?.projectId)
+    assertEquals(FirebaseTokenManager.EXPECTED_SENDER_ID, doc?.senderId)
+    assertEquals(FirebaseTokenManager.EXPECTED_PACKAGE_NAME, doc?.packageName)
+    assertTrue(doc?.isActive == true)
+
+    val deactivateRes = withTimeout(DEFAULT_TIMEOUT_MS) {
+      repository.deactivateFcmToken(tokenId = "android_primary")
+    }
+    assertTrue(deactivateRes.isSuccess)
+    val deactivatedDoc = withTimeout(DEFAULT_TIMEOUT_MS) {
+      repository.getFcmTokenDoc(aliceUid, tokenId = "android_primary").getOrNull()
+    }
+    assertEquals(false, deactivatedDoc?.isActive)
+
+    // Verify offline queueing and flush upon reconnect
+    try {
+      NetworkConnectivityMonitor.setSimulatedOnlineStateForTesting(false)
+      val offlineToken = "fcm_token_queued_while_offline_555666777888"
+      val queuedRes = repository.syncFcmToken(offlineToken, tokenId = "android_primary")
+      assertTrue(queuedRes.isSuccess)
+      assertTrue(repository.hasPendingOfflineFcmSync())
+
+      NetworkConnectivityMonitor.setSimulatedOnlineStateForTesting(true)
+      val flushRes = withTimeout(DEFAULT_TIMEOUT_MS) { repository.flushPendingOfflineSync() }
+      assertTrue(flushRes.isSuccess)
+      val flushedDoc = withTimeout(DEFAULT_TIMEOUT_MS) {
+        repository.getFcmTokenDoc(aliceUid, tokenId = "android_primary").getOrNull()
+      }
+      assertEquals(offlineToken, flushedDoc?.fcmToken)
+      assertEquals(true, flushedDoc?.isActive)
+    } finally {
+      NetworkConnectivityMonitor.setSimulatedOnlineStateForTesting(null)
+    }
+  }
+
+  @Test
+  fun getFcmTokenDoc_crossUserAccess_failsWithPermissionDenied() = runBlocking {
+    val aliceUid = signInTestUser(ALICE_EMAIL)
+    val aliceRepo = SkillConnectFirestoreRepository(firestore)
+    withTimeout(DEFAULT_TIMEOUT_MS) {
+      aliceRepo.syncFcmToken("fcm_token_alice_private_1234567890").getOrThrow()
+    }
+
+    signInTestUser(BOB_EMAIL)
+    val bobRepo = SkillConnectFirestoreRepository(firestore)
+    val bobFetch = withTimeout(DEFAULT_TIMEOUT_MS) {
+      bobRepo.getFcmTokenDoc(aliceUid, tokenId = "android_primary")
+    }
+    assertTrue("Cross-user FCM token read must fail", bobFetch.isFailure)
+    val firestoreEx = bobFetch.exceptionOrNull()?.unwrapFirestoreException()
+    assertNotNull(firestoreEx)
+    assertEquals(FirebaseFirestoreException.Code.PERMISSION_DENIED, firestoreEx?.code)
+  }
+
   private companion object {
     const val ALICE_EMAIL = "alice@skillconnect.in"
     const val BOB_EMAIL = "bob@skillconnect.in"

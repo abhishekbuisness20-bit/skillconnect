@@ -296,12 +296,58 @@
         }
       },
       "required": ["reporterId", "reporterName", "reason", "details", "status", "assignedRoleLevel", "createdAt", "updatedAt"]
+    },
+    "FcmTokenDoc": {
+      "title": "FcmTokenDoc",
+      "description": "Synchronized Firebase Cloud Messaging registration token metadata scoped to an authenticated user's device.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the token owner."
+        },
+        "fcmToken": {
+          "type": "string",
+          "description": "Current active FCM registration token."
+        },
+        "projectId": {
+          "type": "string",
+          "description": "Verified Firebase project ID (gen-lang-client-0778223582)."
+        },
+        "senderId": {
+          "type": "string",
+          "description": "Verified GCM/FCM sender ID (800529463187)."
+        },
+        "packageName": {
+          "type": "string",
+          "description": "Verified Android package name (com.aistudio.skillconnect.market)."
+        },
+        "platform": {
+          "type": "string",
+          "enum": ["ANDROID"],
+          "description": "Client platform identifier."
+        },
+        "isActive": {
+          "type": "boolean",
+          "description": "Whether notifications are active for this token."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of the last token sync."
+        }
+      },
+      "required": ["userId", "fcmToken", "projectId", "senderId", "packageName", "platform", "isActive", "updatedAt"]
     }
   },
   "firestore": {
     "/users/{userId}": {
       "schema": "UserProfileDoc",
       "description": "User profile documents keyed by Firebase Auth UID."
+    },
+    "/users/{userId}/fcm_tokens/{tokenId}": {
+      "schema": "FcmTokenDoc",
+      "description": "Synchronized FCM registration tokens per user device."
     },
     "/work_requests/{requestId}": {
       "schema": "WorkRequestDoc",

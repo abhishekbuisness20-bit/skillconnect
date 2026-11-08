@@ -1,5 +1,7 @@
 package com.example.ui.screens
 
+import android.content.Intent
+import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -11,6 +13,8 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Chat
@@ -24,8 +28,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.*
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -45,12 +53,22 @@ fun GeminiAiAssistantDialog(
     onDismiss: () -> Unit
 ) {
     var inputPrompt by remember { mutableStateOf("") }
+    val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
     val quickPrompts = listOf(
+        "Top service hubs in Bengaluru on Maps",
         "Best UI/UX designers",
         "Android app developer rates",
-        "Verified video editors",
-        "SEO & marketing experts"
+        "Verified local specialists near me"
     )
+    val submitPrompt = {
+        if (inputPrompt.isNotBlank()) {
+            val toSend = inputPrompt.trim()
+            inputPrompt = ""
+            focusManager.clearFocus()
+            onSendPrompt(toSend)
+        }
+    }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -97,14 +115,45 @@ fun GeminiAiAssistantDialog(
                         }
                         Spacer(modifier = Modifier.width(10.dp))
                         Column {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(
+                                    text = "Ask Gemini AI",
+                                    color = TextWhite,
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(GreenBrand.copy(alpha = 0.16f))
+                                        .border(1.dp, GreenBrand.copy(alpha = 0.5f), RoundedCornerShape(6.dp))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                        .testTag("gemini_maps_grounding_badge")
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Default.Map,
+                                            contentDescription = null,
+                                            tint = GreenBrand,
+                                            modifier = Modifier.size(11.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(3.dp))
+                                        Text(
+                                            text = "Maps Grounded",
+                                            color = GreenBrand,
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            softWrap = false
+                                        )
+                                    }
+                                }
+                            }
                             Text(
-                                text = "Ask Gemini AI",
-                                color = TextWhite,
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = "SkillConnect Smart Talent Concierge",
+                                text = "gemini-3.8-flash • Google Maps & Live Catalog",
                                 color = CyanBrand,
                                 fontSize = 11.sp
                             )
@@ -206,6 +255,47 @@ fun GeminiAiAssistantDialog(
                                     lineHeight = 18.sp
                                 )
                             }
+                            if (!msg.isFromUser && msg.mapsPlaces.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Column(
+                                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                                    modifier = Modifier.widthIn(max = 290.dp)
+                                ) {
+                                    msg.mapsPlaces.forEach { place ->
+                                        Row(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(GreenBrand.copy(alpha = 0.14f))
+                                                .border(1.dp, GreenBrand.copy(alpha = 0.45f), RoundedCornerShape(8.dp))
+                                                .clickable {
+                                                    runCatching {
+                                                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(place.uri))
+                                                        context.startActivity(intent)
+                                                    }
+                                                }
+                                                .padding(horizontal = 10.dp, vertical = 6.dp)
+                                                .testTag("maps_grounding_chip_${place.title}"),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Place,
+                                                contentDescription = "Open in Google Maps",
+                                                tint = GreenBrand,
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                text = place.title,
+                                                color = GreenBrand,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
 
@@ -264,7 +354,7 @@ fun GeminiAiAssistantDialog(
                         onValueChange = { inputPrompt = it },
                         placeholder = {
                             Text(
-                                text = "Ask about services, rates or providers…",
+                                text = "Ask about services, rates or Google Maps locations…",
                                 color = TextMuted,
                                 fontSize = 13.sp
                             )
@@ -279,20 +369,27 @@ fun GeminiAiAssistantDialog(
                         ),
                         shape = RoundedCornerShape(16.dp),
                         singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                        keyboardActions = KeyboardActions(onSend = { submitPrompt() }),
                         modifier = Modifier
                             .weight(1f)
+                            .onPreviewKeyEvent { event ->
+                                if (event.type == KeyEventType.KeyDown &&
+                                    (event.key == Key.Enter || event.key == Key.NumPadEnter)
+                                ) {
+                                    submitPrompt()
+                                    true
+                                } else {
+                                    false
+                                }
+                            }
                             .testTag("gemini_ai_input")
                     )
 
                     Spacer(modifier = Modifier.width(8.dp))
 
                     IconButton(
-                        onClick = {
-                            if (inputPrompt.isNotBlank()) {
-                                onSendPrompt(inputPrompt)
-                                inputPrompt = ""
-                            }
-                        },
+                        onClick = { submitPrompt() },
                         modifier = Modifier
                             .size(46.dp)
                             .clip(CircleShape)
@@ -317,6 +414,9 @@ fun LocationSelectorDialog(
     onSelectCity: (String?) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
+    var cityQuery by remember { mutableStateOf("") }
     val cities = listOf(
         null to "All India (National Marketplace)",
         "Bengaluru" to "Bengaluru, Karnataka",
@@ -327,6 +427,12 @@ fun LocationSelectorDialog(
         "Chennai" to "Chennai, Tamil Nadu",
         "Kolkata" to "Kolkata, West Bengal"
     )
+    val filteredCities = remember(cityQuery) {
+        if (cityQuery.isBlank()) cities
+        else cities.filter { (key, label) ->
+            label.contains(cityQuery, ignoreCase = true) || (key?.contains(cityQuery, ignoreCase = true) == true)
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -348,7 +454,54 @@ fun LocationSelectorDialog(
                     color = TextMuted,
                     fontSize = 12.sp
                 )
-                cities.forEach { (cityKey, displayLabel) ->
+                OutlinedTextField(
+                    value = cityQuery,
+                    onValueChange = { cityQuery = it },
+                    placeholder = { Text("Filter or enter city name…", fontSize = 12.sp, color = TextMuted) },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(
+                        onDone = {
+                            focusManager.clearFocus()
+                            val firstMatch = filteredCities.firstOrNull()
+                            if (firstMatch != null) {
+                                onSelectCity(firstMatch.first)
+                                onDismiss()
+                            } else if (cityQuery.isNotBlank()) {
+                                onSelectCity(cityQuery.trim())
+                                onDismiss()
+                            }
+                        }
+                    ),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = TextWhite,
+                        unfocusedTextColor = TextWhite,
+                        focusedBorderColor = CyanBrand,
+                        unfocusedBorderColor = NavyCardBorder
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .onPreviewKeyEvent { event ->
+                            if (event.type == KeyEventType.KeyDown &&
+                                (event.key == Key.Enter || event.key == Key.NumPadEnter)
+                            ) {
+                                focusManager.clearFocus()
+                                val firstMatch = filteredCities.firstOrNull()
+                                if (firstMatch != null) {
+                                    onSelectCity(firstMatch.first)
+                                    onDismiss()
+                                } else if (cityQuery.isNotBlank()) {
+                                    onSelectCity(cityQuery.trim())
+                                    onDismiss()
+                                }
+                                true
+                            } else {
+                                false
+                            }
+                        }
+                        .testTag("location_search_input")
+                )
+                filteredCities.forEach { (cityKey, displayLabel) ->
                     val isSelected = selectedCity == cityKey
                     Row(
                         modifier = Modifier
@@ -379,6 +532,22 @@ fun LocationSelectorDialog(
                         }
                     }
                 }
+            }
+        },
+        dismissButton = {
+            val mapTarget = selectedCity ?: "Bengaluru"
+            TextButton(
+                onClick = {
+                    runCatching {
+                        val uri = Uri.parse("https://www.google.com/maps/search/?api=1&query=${Uri.encode("$mapTarget India")}")
+                        context.startActivity(Intent(Intent.ACTION_VIEW, uri))
+                    }
+                },
+                modifier = Modifier.testTag("location_open_google_maps_button")
+            ) {
+                Icon(Icons.Default.Map, contentDescription = null, tint = GreenBrand, modifier = Modifier.size(15.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Open $mapTarget in Maps", color = GreenBrand, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
             }
         },
         confirmButton = {
@@ -797,20 +966,38 @@ fun FooterDestinationScreen(
 
                             HorizontalDivider(color = NavyCardBorder)
 
+                            val submitSupportForm = {
+                                if (supportSubject.isNotBlank() || supportMessage.isNotBlank()) {
+                                    onSubmitSupportTicket(
+                                        supportSubject.ifBlank { "General Support" },
+                                        supportMessage.ifBlank { "Support inquiry" }
+                                    )
+                                    ticketSubmitted = true
+                                    supportSubject = ""
+                                    supportMessage = ""
+                                }
+                            }
                             Text("Submit a Support or Safety Ticket", color = TextWhite, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                             OutlinedTextField(
                                 value = supportSubject,
                                 onValueChange = { supportSubject = it },
                                 label = { Text("Subject / Topic") },
                                 singleLine = true,
-                                modifier = Modifier.fillMaxWidth()
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("support_subject_input")
                             )
                             OutlinedTextField(
                                 value = supportMessage,
                                 onValueChange = { supportMessage = it },
                                 label = { Text("Describe how we can help") },
                                 minLines = 3,
-                                modifier = Modifier.fillMaxWidth()
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                                keyboardActions = KeyboardActions(onSend = { submitSupportForm() }),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("support_message_input")
                             )
                             if (ticketSubmitted) {
                                 Text(
@@ -821,17 +1008,7 @@ fun FooterDestinationScreen(
                                 )
                             }
                             Button(
-                                onClick = {
-                                    if (supportSubject.isNotBlank() || supportMessage.isNotBlank()) {
-                                        onSubmitSupportTicket(
-                                            supportSubject.ifBlank { "General Support" },
-                                            supportMessage.ifBlank { "Support inquiry" }
-                                        )
-                                        ticketSubmitted = true
-                                        supportSubject = ""
-                                        supportMessage = ""
-                                    }
-                                },
+                                onClick = { submitSupportForm() },
                                 colors = ButtonDefaults.buttonColors(containerColor = CyanBrand),
                                 shape = RoundedCornerShape(10.dp),
                                 modifier = Modifier.fillMaxWidth()

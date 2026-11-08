@@ -232,6 +232,20 @@ data class PlatformComplaintDoc(
     }
 }
 
+@IgnoreExtraProperties
+data class FcmTokenDoc(
+    @DocumentId val id: String = "",
+    val userId: String = "",
+    val fcmToken: String = "",
+    val projectId: String = FirebaseTokenManager.EXPECTED_PROJECT_ID,
+    val senderId: String = FirebaseTokenManager.EXPECTED_SENDER_ID,
+    val packageName: String = FirebaseTokenManager.EXPECTED_PACKAGE_NAME,
+    val platform: String = "ANDROID",
+    @get:com.google.firebase.firestore.PropertyName("isActive")
+    val isActive: Boolean = true,
+    @ServerTimestamp val updatedAt: Timestamp? = null
+)
+
 class SkillConnectFirestoreRepository(private val db: FirebaseFirestore) {
 
     // CRITICAL: Always initialize with R.string.firestore_database_id
@@ -243,10 +257,44 @@ class SkillConnectFirestoreRepository(private val db: FirebaseFirestore) {
 
     private val auth get() = Firebase.auth
 
+    @Volatile
+    private var pendingOfflineFcmToken: Pair<String, String>? = null
+
     private fun requireUserId(): String {
         return auth.currentUser?.uid
             ?: throw IllegalStateException("User must be signed in with Google before accessing Firestore.")
     }
+
+    private suspend fun <T> executeWithTokenRefresh(block: suspend () -> T): T {
+        val isOnline = NetworkConnectivityMonitor.isCurrentlyConnected()
+        return try {
+            block()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            val diag = FirebaseTokenManager.classifyTokenError(e, isOnline)
+            if (isOnline && !diag.isTransientNetworkError && diag.requiresForceRefresh && auth.currentUser != null) {
+                FirebaseTokenManager.ensureValidAuthIdToken(forceRefresh = true)
+                if (diag.origin == FirebaseTokenOrigin.FIREBASE_APP_CHECK) {
+                    FirebaseTokenManager.ensureValidAppCheckToken(forceRefresh = true)
+                }
+                block()
+            } else {
+                throw e
+            }
+        }
+    }
+
+    suspend fun flushPendingOfflineSync(): Result<Unit> {
+        val pending = pendingOfflineFcmToken ?: return Result.success(Unit)
+        if (!NetworkConnectivityMonitor.isCurrentlyConnected()) {
+            return Result.success(Unit)
+        }
+        pendingOfflineFcmToken = null
+        return syncFcmToken(fcmToken = pending.first, tokenId = pending.second)
+    }
+
+    fun hasPendingOfflineFcmSync(): Boolean = pendingOfflineFcmToken != null
 
     suspend fun saveUserProfile(profile: UserProfile): Result<String> {
         val uid = try {
@@ -257,7 +305,16 @@ class SkillConnectFirestoreRepository(private val db: FirebaseFirestore) {
         }
         val docRef = db.collection("users").document(uid)
         return try {
-            val existingSnap = docRef.get().await()
+            val source = if (NetworkConnectivityMonitor.isCurrentlyConnected()) {
+                com.google.firebase.firestore.Source.DEFAULT
+            } else {
+                com.google.firebase.firestore.Source.CACHE
+            }
+            val existingSnap = try {
+                executeWithTokenRefresh { docRef.get(source).await() }
+            } catch (_: Exception) {
+                null
+            }
             val safeRole = if (profile.role == UserRole.ADMIN) "CUSTOMER" else profile.role.name
             val payload = mutableMapOf<String, Any>(
                 "userId" to uid,
@@ -283,7 +340,7 @@ class SkillConnectFirestoreRepository(private val db: FirebaseFirestore) {
             profile.profilePhotoUri?.take(500)?.let { payload["profilePhotoUri"] = it }
             profile.coverPhotoUri?.take(500)?.let { payload["coverPhotoUri"] = it }
 
-            if (existingSnap.exists()) {
+            if (existingSnap != null && existingSnap.exists()) {
                 val existingCreatedAt = existingSnap.getTimestamp(
                     "createdAt",
                     DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
@@ -309,8 +366,13 @@ class SkillConnectFirestoreRepository(private val db: FirebaseFirestore) {
 
     suspend fun getUserProfile(userId: String = requireUserId()): Result<UserProfileDoc?> {
         val docRef = db.collection("users").document(userId)
+        val isOnline = NetworkConnectivityMonitor.isCurrentlyConnected()
         return try {
-            val snap = docRef.get().await()
+            val snap = if (isOnline) {
+                executeWithTokenRefresh { docRef.get().await() }
+            } else {
+                docRef.get(com.google.firebase.firestore.Source.CACHE).await()
+            }
             val doc = snap.toObject(
                 UserProfileDoc::class.java,
                 DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
@@ -319,6 +381,19 @@ class SkillConnectFirestoreRepository(private val db: FirebaseFirestore) {
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
+            val diag = FirebaseTokenManager.classifyTokenError(e, isOnline)
+            if (diag.isTransientNetworkError) {
+                return try {
+                    val cachedSnap = docRef.get(com.google.firebase.firestore.Source.CACHE).await()
+                    val cachedDoc = cachedSnap.toObject(
+                        UserProfileDoc::class.java,
+                        DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
+                    )
+                    Result.success(cachedDoc)
+                } catch (_: Exception) {
+                    Result.success(null)
+                }
+            }
             handleFirestoreError(e, OperationType.GET, docRef.path)
             Result.failure(e)
         }
@@ -629,7 +704,117 @@ class SkillConnectFirestoreRepository(private val db: FirebaseFirestore) {
             "updatedAt" to FieldValue.serverTimestamp()
         )
         return try {
-            docRef.update(payload).await()
+            executeWithTokenRefresh { docRef.update(payload).await() }
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, docRef.path)
+            Result.failure(e)
+        }
+    }
+
+    // --- FCM Token Synchronization (/users/{userId}/fcm_tokens/{tokenId}) ---
+
+    suspend fun syncFcmToken(
+        fcmToken: String,
+        tokenId: String = "android_primary"
+    ): Result<Unit> {
+        val cleanedToken = fcmToken.trim()
+        if (cleanedToken.length < 10) {
+            return Result.failure(IllegalArgumentException("FCM token must be at least 10 characters."))
+        }
+        if (!NetworkConnectivityMonitor.isCurrentlyConnected()) {
+            pendingOfflineFcmToken = cleanedToken.take(4096) to tokenId
+            return Result.success(Unit)
+        }
+        val uid = try {
+            requireUserId()
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.WRITE, "users/fcm_tokens")
+            return Result.failure(e)
+        }
+        val docRef = db.collection("users")
+            .document(uid)
+            .collection("fcm_tokens")
+            .document(tokenId)
+        val payload = mapOf(
+            "userId" to uid,
+            "fcmToken" to cleanedToken.take(4096),
+            "projectId" to FirebaseTokenManager.EXPECTED_PROJECT_ID,
+            "senderId" to FirebaseTokenManager.EXPECTED_SENDER_ID,
+            "packageName" to FirebaseTokenManager.EXPECTED_PACKAGE_NAME,
+            "platform" to "ANDROID",
+            "isActive" to true,
+            "updatedAt" to FieldValue.serverTimestamp()
+        )
+        return try {
+            executeWithTokenRefresh { docRef.set(payload).await() }
+            pendingOfflineFcmToken = null
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            val diag = FirebaseTokenManager.classifyTokenError(e)
+            if (diag.isTransientNetworkError) {
+                pendingOfflineFcmToken = cleanedToken.take(4096) to tokenId
+                return Result.success(Unit)
+            }
+            handleFirestoreError(e, OperationType.WRITE, docRef.path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getFcmTokenDoc(
+        userId: String = requireUserId(),
+        tokenId: String = "android_primary"
+    ): Result<FcmTokenDoc?> {
+        val docRef = db.collection("users")
+            .document(userId)
+            .collection("fcm_tokens")
+            .document(tokenId)
+        return try {
+            val snap = executeWithTokenRefresh { docRef.get().await() }
+            val parsed = snap.toObject(
+                FcmTokenDoc::class.java,
+                DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
+            )
+            val doc = parsed?.copy(
+                isActive = snap.getBoolean("isActive") ?: parsed.isActive
+            )
+            Result.success(doc)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.GET, docRef.path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun deactivateFcmToken(
+        tokenId: String = "android_primary"
+    ): Result<Unit> {
+        val uid = auth.currentUser?.uid ?: return Result.success(Unit)
+        val docRef = db.collection("users")
+            .document(uid)
+            .collection("fcm_tokens")
+            .document(tokenId)
+        return try {
+            val existing = executeWithTokenRefresh { docRef.get().await() }
+            if (existing.exists()) {
+                val fcmToken = existing.getString("fcmToken") ?: "deactivated_token_placeholder"
+                val payload = mapOf(
+                    "userId" to uid,
+                    "fcmToken" to fcmToken,
+                    "projectId" to FirebaseTokenManager.EXPECTED_PROJECT_ID,
+                    "senderId" to FirebaseTokenManager.EXPECTED_SENDER_ID,
+                    "packageName" to FirebaseTokenManager.EXPECTED_PACKAGE_NAME,
+                    "platform" to "ANDROID",
+                    "isActive" to false,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+                executeWithTokenRefresh { docRef.set(payload).await() }
+            }
             Result.success(Unit)
         } catch (e: CancellationException) {
             throw e

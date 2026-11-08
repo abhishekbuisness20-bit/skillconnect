@@ -22,6 +22,11 @@ fun handleFirestoreError(exception: Throwable, operationType: OperationType, pat
         ?: causes.firstOrNull { it !is CancellationException }
         ?: exception
 
+    val diagnostic = FirebaseTokenManager.classifyTokenError(rootError)
+    val sanitizedErrorMsg = FirebaseTokenManager.sanitizeLogMessage(
+        rootError.message ?: rootError.toString()
+    )
+
     val auth = try {
         FirebaseAuth.getInstance()
     } catch (_: Exception) {
@@ -44,11 +49,19 @@ fun handleFirestoreError(exception: Throwable, operationType: OperationType, pat
         put("providerInfo", JSONArray(providerInfoList))
     }
 
+    val tokenDiagJson = JSONObject().apply {
+        put("origin", diagnostic.origin.name)
+        put("code", diagnostic.errorCode)
+        put("requiresForceRefresh", diagnostic.requiresForceRefresh)
+        put("projectId", FirebaseTokenManager.EXPECTED_PROJECT_ID)
+    }
+
     val errorInfoJson = JSONObject().apply {
-        put("error", rootError.message ?: rootError.toString())
+        put("error", sanitizedErrorMsg)
         put("operationType", operationType.value)
         put("path", path)
         put("authInfo", authInfoJson)
+        put("tokenDiagnostic", tokenDiagJson)
     }
 
     val jsonString = errorInfoJson.toString()

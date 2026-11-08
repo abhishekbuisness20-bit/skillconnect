@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
@@ -20,11 +22,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.key.*
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
@@ -173,6 +177,99 @@ fun AuthScreen(
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+
+    val submitAuthForm: () -> Unit = submitBlock@{
+        errorMessage = null
+        successMessage = null
+        submitAttempted = true
+        emailTouched = true
+        passwordTouched = true
+
+        if (!isEmailValid) {
+            errorMessage = emailValidationMessage ?: "Please enter a valid email address."
+            return@submitBlock
+        }
+
+        if (!isPasswordValid) {
+            errorMessage = passwordValidationMessage ?: "Invalid credentials: Password must be at least 6 characters."
+            return@submitBlock
+        }
+
+        if (isAdminMode) {
+            val result = onLogin(email, password, UserRole.ADMIN)
+            if (result.isSuccess) {
+                successMessage = "Authorized Admin Access Granted."
+                onAuthSuccess(result.getOrThrow())
+            } else {
+                errorMessage = result.exceptionOrNull()?.message ?: "Admin verification failed."
+            }
+            return@submitBlock
+        }
+
+        if (isCreateAccountTab) {
+            if (fullName.isBlank()) {
+                errorMessage = "Please enter your full name."
+                return@submitBlock
+            }
+            if (mobile.trim().length < 10) {
+                errorMessage = "Please enter a valid 10-digit mobile number."
+                return@submitBlock
+            }
+            if (city.isBlank() || state.isBlank()) {
+                errorMessage = "Please enter your city and state."
+                return@submitBlock
+            }
+            if (password != confirmPassword) {
+                errorMessage = "Passwords do not match."
+                return@submitBlock
+            }
+            if (!termsAccepted) {
+                errorMessage = "Please agree to the Terms & Privacy Policy."
+                return@submitBlock
+            }
+
+            if (publicAccountType == UserRole.CUSTOMER) {
+                val res = onRegisterCustomer(fullName, email, mobile, city, state, password)
+                if (res.isSuccess) {
+                    successMessage = "Customer account registered successfully!"
+                    onAuthSuccess(res.getOrThrow())
+                } else {
+                    errorMessage = res.exceptionOrNull()?.message ?: "Registration failed."
+                }
+            } else {
+                if (professionalTitle.isBlank()) {
+                    errorMessage = "Please specify your Professional Title."
+                    return@submitBlock
+                }
+                val skillsList = skillsInput.split(",").map { it.trim() }.filter { it.isNotBlank() }
+                if (skillsList.isEmpty()) {
+                    errorMessage = "Please list at least one skill."
+                    return@submitBlock
+                }
+                val rate = hourlyRateInput.toLongOrNull() ?: 1000L
+
+                val res = onRegisterProvider(
+                    fullName, email, mobile, city, state, password,
+                    professionalTitle, selectedCategoryId, skillsList, rate, bioInput
+                )
+                if (res.isSuccess) {
+                    successMessage = "Provider profile registered! Welcome to SkillConnect."
+                    onAuthSuccess(res.getOrThrow())
+                } else {
+                    errorMessage = res.exceptionOrNull()?.message ?: "Provider registration failed."
+                }
+            }
+        } else {
+            val result = onLogin(email, password, publicAccountType)
+            if (result.isSuccess) {
+                val user = result.getOrThrow()
+                successMessage = "Signed in successfully as ${user.name}."
+                onAuthSuccess(user)
+            } else {
+                errorMessage = result.exceptionOrNull()?.message ?: "Sign in failed. Check credentials."
+            }
+        }
+    }
 
     LaunchedEffect(Unit) {
         val credentialManager = CredentialManager.create(context)
@@ -607,6 +704,7 @@ fun AuthScreen(
                                 focusedBorderColor = CyanBrand
                             ),
                             singleLine = true,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .testTag("auth_name_input")
@@ -624,6 +722,7 @@ fun AuthScreen(
                                 focusedBorderColor = CyanBrand
                             ),
                             singleLine = true,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .testTag("auth_phone_input")
@@ -644,6 +743,7 @@ fun AuthScreen(
                                     focusedBorderColor = CyanBrand
                                 ),
                                 singleLine = true,
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                                 modifier = Modifier.weight(1f)
                             )
                             OutlinedTextField(
@@ -657,6 +757,7 @@ fun AuthScreen(
                                     focusedBorderColor = CyanBrand
                                 ),
                                 singleLine = true,
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                                 modifier = Modifier.weight(1f)
                             )
                         }
@@ -685,6 +786,7 @@ fun AuthScreen(
                                     focusedBorderColor = GreenBrand
                                 ),
                                 singleLine = true,
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                                 modifier = Modifier.fillMaxWidth()
                             )
 
@@ -699,6 +801,7 @@ fun AuthScreen(
                                     focusedBorderColor = GreenBrand
                                 ),
                                 singleLine = true,
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                                 modifier = Modifier.fillMaxWidth()
                             )
 
@@ -713,6 +816,7 @@ fun AuthScreen(
                                     focusedBorderColor = GreenBrand
                                 ),
                                 singleLine = true,
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                                 modifier = Modifier.fillMaxWidth()
                             )
 
@@ -722,6 +826,7 @@ fun AuthScreen(
                                 label = { Text("Short Bio / Experience") },
                                 placeholder = { Text("Briefly describe your expertise...") },
                                 maxLines = 3,
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                                 colors = OutlinedTextFieldDefaults.colors(
                                     focusedTextColor = TextWhite,
                                     unfocusedTextColor = TextWhite,
@@ -802,6 +907,7 @@ fun AuthScreen(
                             errorTrailingIconColor = ErrorRed
                         ),
                         singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                         modifier = Modifier
                             .fillMaxWidth()
                             .onFocusChanged { focusState ->
@@ -879,6 +985,16 @@ fun AuthScreen(
                             errorLeadingIconColor = ErrorRed
                         ),
                         singleLine = true,
+                        keyboardOptions = KeyboardOptions(
+                            imeAction = if (isCreateAccountTab && !isAdminMode) ImeAction.Next else ImeAction.Done
+                        ),
+                        keyboardActions = KeyboardActions(
+                            onDone = {
+                                if (!isCreateAccountTab || isAdminMode) {
+                                    submitAuthForm()
+                                }
+                            }
+                        ),
                         modifier = Modifier
                             .fillMaxWidth()
                             .onFocusChanged { focusState ->
@@ -886,6 +1002,17 @@ fun AuthScreen(
                                     passwordHadFocus = true
                                 } else if (passwordHadFocus) {
                                     passwordTouched = true
+                                }
+                            }
+                            .onPreviewKeyEvent { event ->
+                                if ((!isCreateAccountTab || isAdminMode) &&
+                                    event.type == KeyEventType.KeyDown &&
+                                    (event.key == Key.Enter || event.key == Key.NumPadEnter)
+                                ) {
+                                    submitAuthForm()
+                                    true
+                                } else {
+                                    false
                                 }
                             }
                             .testTag("auth_password_input")
@@ -999,7 +1126,21 @@ fun AuthScreen(
                                 focusedBorderColor = CyanBrand
                             ),
                             singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                            keyboardActions = KeyboardActions(onDone = { submitAuthForm() }),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .onPreviewKeyEvent { event ->
+                                    if (event.type == KeyEventType.KeyDown &&
+                                        (event.key == Key.Enter || event.key == Key.NumPadEnter)
+                                    ) {
+                                        submitAuthForm()
+                                        true
+                                    } else {
+                                        false
+                                    }
+                                }
+                                .testTag("auth_confirm_password_input")
                         )
 
                         Row(
@@ -1095,102 +1236,7 @@ fun AuthScreen(
 
                     // Primary Action Button
                     Button(
-                        onClick = {
-                            errorMessage = null
-                            successMessage = null
-                            submitAttempted = true
-                            emailTouched = true
-                            passwordTouched = true
-
-                            // Validate email
-                            if (!isEmailValid) {
-                                errorMessage = emailValidationMessage ?: "Please enter a valid email address."
-                                return@Button
-                            }
-
-                            // Validate password
-                            if (!isPasswordValid) {
-                                errorMessage = passwordValidationMessage ?: "Invalid credentials: Password must be at least 6 characters."
-                                return@Button
-                            }
-
-                            if (isAdminMode) {
-                                val result = onLogin(email, password, UserRole.ADMIN)
-                                if (result.isSuccess) {
-                                    successMessage = "Authorized Admin Access Granted."
-                                    onAuthSuccess(result.getOrThrow())
-                                } else {
-                                    errorMessage = result.exceptionOrNull()?.message ?: "Admin verification failed."
-                                }
-                                return@Button
-                            }
-
-                            if (isCreateAccountTab) {
-                                // Create account validation
-                                if (fullName.isBlank()) {
-                                    errorMessage = "Please enter your full name."
-                                    return@Button
-                                }
-                                if (mobile.trim().length < 10) {
-                                    errorMessage = "Please enter a valid 10-digit mobile number."
-                                    return@Button
-                                }
-                                if (city.isBlank() || state.isBlank()) {
-                                    errorMessage = "Please enter your city and state."
-                                    return@Button
-                                }
-                                if (password != confirmPassword) {
-                                    errorMessage = "Passwords do not match."
-                                    return@Button
-                                }
-                                if (!termsAccepted) {
-                                    errorMessage = "Please agree to the Terms & Privacy Policy."
-                                    return@Button
-                                }
-
-                                if (publicAccountType == UserRole.CUSTOMER) {
-                                    val res = onRegisterCustomer(fullName, email, mobile, city, state, password)
-                                    if (res.isSuccess) {
-                                        successMessage = "Customer account registered successfully!"
-                                        onAuthSuccess(res.getOrThrow())
-                                    } else {
-                                        errorMessage = res.exceptionOrNull()?.message ?: "Registration failed."
-                                    }
-                                } else {
-                                    if (professionalTitle.isBlank()) {
-                                        errorMessage = "Please specify your Professional Title."
-                                        return@Button
-                                    }
-                                    val skillsList = skillsInput.split(",").map { it.trim() }.filter { it.isNotBlank() }
-                                    if (skillsList.isEmpty()) {
-                                        errorMessage = "Please list at least one skill."
-                                        return@Button
-                                    }
-                                    val rate = hourlyRateInput.toLongOrNull() ?: 1000L
-
-                                    val res = onRegisterProvider(
-                                        fullName, email, mobile, city, state, password,
-                                        professionalTitle, selectedCategoryId, skillsList, rate, bioInput
-                                    )
-                                    if (res.isSuccess) {
-                                        successMessage = "Provider profile registered! Welcome to SkillConnect."
-                                        onAuthSuccess(res.getOrThrow())
-                                    } else {
-                                        errorMessage = res.exceptionOrNull()?.message ?: "Provider registration failed."
-                                    }
-                                }
-                            } else {
-                                // Sign in
-                                val result = onLogin(email, password, publicAccountType)
-                                if (result.isSuccess) {
-                                    val user = result.getOrThrow()
-                                    successMessage = "Signed in successfully as ${user.name}."
-                                    onAuthSuccess(user)
-                                } else {
-                                    errorMessage = result.exceptionOrNull()?.message ?: "Sign in failed. Check credentials."
-                                }
-                            }
-                        },
+                        onClick = { submitAuthForm() },
                         colors = ButtonDefaults.buttonColors(
                             containerColor = if (isAdminMode) BlueBrand
                             else if (publicAccountType == UserRole.CUSTOMER) CyanBrand
@@ -1432,8 +1478,40 @@ private fun AdminForgotPasswordDialog(
                         errorBorderColor = ErrorRed
                     ),
                     singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(
+                        onDone = {
+                            touched = true
+                            if (!isValid) {
+                                dialogError = validationMessage
+                            } else {
+                                val res = onSubmitReset(resetEmail)
+                                if (res.isFailure) {
+                                    dialogError = res.exceptionOrNull()?.message ?: "Unable to send reset email."
+                                }
+                            }
+                        }
+                    ),
                     modifier = Modifier
                         .fillMaxWidth()
+                        .onPreviewKeyEvent { event ->
+                            if (event.type == KeyEventType.KeyDown &&
+                                (event.key == Key.Enter || event.key == Key.NumPadEnter)
+                            ) {
+                                touched = true
+                                if (!isValid) {
+                                    dialogError = validationMessage
+                                } else {
+                                    val res = onSubmitReset(resetEmail)
+                                    if (res.isFailure) {
+                                        dialogError = res.exceptionOrNull()?.message ?: "Unable to send reset email."
+                                    }
+                                }
+                                true
+                            } else {
+                                false
+                            }
+                        }
                         .testTag("reset_dialog_email_input")
                 )
             }

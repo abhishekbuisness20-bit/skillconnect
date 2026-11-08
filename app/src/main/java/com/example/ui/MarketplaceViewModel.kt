@@ -8,6 +8,7 @@ import com.example.data.MarketplaceRepository
 import com.example.model.*
 import com.google.firebase.Firebase
 import com.google.firebase.ai.ai
+import com.google.firebase.ai.type.Tool
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
@@ -75,7 +76,8 @@ data class MarketplaceUiState(
     val sessionTimeoutMessage: String? = null,
     val registrationConfirmationMessage: String? = null,
     val isMarketplaceRefreshing: Boolean = false,
-    val lastRefreshedMillis: Long = System.currentTimeMillis()
+    val lastRefreshedMillis: Long = System.currentTimeMillis(),
+    val isNetworkOnline: Boolean = true
 )
 
 class MarketplaceViewModel(
@@ -86,9 +88,12 @@ class MarketplaceViewModel(
         const val ADMIN_SESSION_TIMEOUT_MS: Long = 15 * 60 * 1000L // 15 minutes in milliseconds
     }
 
-    // Lazy initialization of Gemini model via Firebase AI Logic
+    // Lazy initialization of Gemini model via Firebase AI Logic with Google Maps Grounding
     private val geminiModel by lazy {
-        Firebase.ai.generativeModel("gemini-3.8-flash")
+        Firebase.ai.generativeModel(
+            modelName = "gemini-3.8-flash",
+            tools = listOf(Tool.googleMaps())
+        )
     }
 
     private val _searchQuery = MutableStateFlow("")
@@ -122,7 +127,17 @@ class MarketplaceViewModel(
             AiChatMessage(
                 id = "ai_welcome",
                 isFromUser = false,
-                text = "Namaste! I'm your SkillConnect Gemini AI Assistant. Ask me about services, pricing in ₹ INR, or finding the right verified Indian professional for your project!"
+                text = "Namaste! I'm your SkillConnect Gemini AI Assistant powered by Google Maps Grounding (gemini-3.8-flash). Ask me about services, local business hubs on Google Maps, pricing in ₹ INR, or finding the right verified Indian professional for your project!",
+                mapsPlaces = listOf(
+                    MapsGroundedPlace(
+                        title = "Bengaluru Tech & Design Hub • Google Maps",
+                        uri = "https://www.google.com/maps/search/?api=1&query=Bengaluru+Karnataka+India"
+                    ),
+                    MapsGroundedPlace(
+                        title = "Mumbai Creative Studios • Google Maps",
+                        uri = "https://www.google.com/maps/search/?api=1&query=Mumbai+Maharashtra+India"
+                    )
+                )
             )
         )
     )
@@ -187,7 +202,8 @@ class MarketplaceViewModel(
         repository.complaints,
         _isMarketplaceRefreshing,
         _lastRefreshedMillis,
-        _registrationConfirmationMessage
+        _registrationConfirmationMessage,
+        com.example.data.NetworkConnectivityMonitor.isOnline
     ) { args: Array<Any?> ->
         val isAuth = args[0] as Boolean
         val user = args[1] as UserProfile
@@ -230,6 +246,7 @@ class MarketplaceViewModel(
         val isRefreshing = args[38] as Boolean
         val lastRefreshed = args[39] as Long
         val regConfirmMsg = args[40] as String?
+        val isNetOnline = args[41] as Boolean
 
         val currentRoute = when (role) {
             UserRole.SERVICE_PROVIDER -> provRoute
@@ -329,7 +346,8 @@ class MarketplaceViewModel(
             sessionTimeoutMessage = timeoutMsg,
             registrationConfirmationMessage = regConfirmMsg,
             isMarketplaceRefreshing = isRefreshing,
-            lastRefreshedMillis = lastRefreshed
+            lastRefreshedMillis = lastRefreshed,
+            isNetworkOnline = isNetOnline
         )
     }.stateIn(
         scope = viewModelScope,
@@ -354,7 +372,8 @@ class MarketplaceViewModel(
             auditLogsList = MarketplaceRepository.initialAuditLogs,
             complaintsList = MarketplaceRepository.initialComplaints,
             isMarketplaceRefreshing = false,
-            lastRefreshedMillis = System.currentTimeMillis()
+            lastRefreshedMillis = System.currentTimeMillis(),
+            isNetworkOnline = com.example.data.NetworkConnectivityMonitor.isCurrentlyConnected()
         )
     )
 
@@ -530,20 +549,34 @@ class MarketplaceViewModel(
 
     private fun startCloudSyncForUser(initialProfile: UserProfile) {
         val cloudRepo = repository.firestoreRepository ?: return
+        val firebaseUser = try {
+            com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+        } catch (_: Exception) {
+            null
+        } ?: return
+
+        val authenticatedUid = firebaseUser.uid
         cloudSyncJob?.cancel()
         cloudSyncJob = viewModelScope.launch {
-            val existingRes = cloudRepo.getUserProfile(initialProfile.id)
+            com.example.data.FirebaseTokenManager.ensureValidAuthIdToken(forceRefresh = false)
+            com.example.data.FirebaseTokenManager.ensureValidAppCheckToken(forceRefresh = false)
+
+            com.example.data.FirebaseTokenManager.getLatestInMemoryFcmToken()?.let { fcmToken ->
+                cloudRepo.syncFcmToken(fcmToken)
+            }
+
+            val existingRes = cloudRepo.getUserProfile(authenticatedUid)
             val existingDoc = existingRes.getOrNull()
             if (existingDoc != null) {
                 repository.applyCloudUserProfile(existingDoc)
                 val restoredRole = repository.currentUser.value.role
                 _activeRole.value = restoredRole
             } else {
-                cloudRepo.saveUserProfile(initialProfile)
+                cloudRepo.saveUserProfile(initialProfile.copy(id = authenticatedUid))
             }
 
             launch {
-                cloudRepo.observeUserProfile(initialProfile.id)
+                cloudRepo.observeUserProfile(authenticatedUid)
                     .catch { /* Handled via handleFirestoreError in repository */ }
                     .collect { doc ->
                         if (doc != null) {
@@ -565,6 +598,18 @@ class MarketplaceViewModel(
     fun logout() {
         cloudSyncJob?.cancel()
         cloudSyncJob = null
+        repository.firestoreRepository?.let { cloudRepo ->
+            val hasFirebaseUser = try {
+                com.google.firebase.auth.FirebaseAuth.getInstance().currentUser != null
+            } catch (_: Exception) {
+                false
+            }
+            if (hasFirebaseUser) {
+                viewModelScope.launch {
+                    cloudRepo.deactivateFcmToken()
+                }
+            }
+        }
         repository.logout()
         _activeRole.value = UserRole.CUSTOMER
         _customerScreenRoute.value = "home"
@@ -798,6 +843,14 @@ class MarketplaceViewModel(
         _isAiAssistantOpen.value = true
     }
 
+    fun openAiAssistantWithPrompt(prompt: String) {
+        recordAdminActivity()
+        _isAiAssistantOpen.value = true
+        if (prompt.isNotBlank()) {
+            askGeminiAi(prompt)
+        }
+    }
+
     fun closeAiAssistant() {
         recordAdminActivity()
         _isAiAssistantOpen.value = false
@@ -816,38 +869,63 @@ class MarketplaceViewModel(
         _aiChatMessages.update { it + userMsg }
         _aiUiState.value = AiAssistantUiState.Loading
 
+        val activeCity = _selectedCity.value ?: repository.currentUser.value.city.ifBlank { "Bengaluru" }
         val catalogSummary = repository.providers.value.joinToString("\n") { prov ->
             "- ${prov.name} (${prov.professionalTitle}) in ${prov.city}, ${prov.state}: ₹${prov.hourlyRateInr}/hr, Rating ${prov.rating} (${prov.reviewCount} reviews), Verified=${prov.isVerified}, Available=${prov.isAvailable}, Skills=${prov.skills.joinToString(", ")}"
         }
         val fullPrompt = """
-            You are the official SkillConnect India AI Assistant.
+            You are the official SkillConnect India AI Assistant with Google Maps Grounding enabled.
             Tagline: "${SkillConnectBranding.TAGLINE}"
             Official Support Email: ${SkillConnectBranding.OFFICIAL_EMAIL}
+            Active User Location / City Context: $activeCity, India
             Live Verified Providers on SkillConnect:
             $catalogSummary
 
-            Answer the user's question concisely, helpfully, and professionally. Recommend relevant SkillConnect providers, skills, and INR (₹) rates from the live catalog above when applicable.
+            Use Google Maps grounding where relevant to provide up-to-date, accurate local service area insights, commercial hubs, and location context in India alongside matching SkillConnect providers, skills, and INR (₹) rates from the live catalog above.
 
             User Question: $trimmed
         """.trimIndent()
 
         viewModelScope.launch {
             val accumulatedText = StringBuilder()
+            val groundedPlaces = mutableListOf<MapsGroundedPlace>()
+            val defaultMapsPlace = buildDefaultMapsGroundedPlace(trimmed, activeCity)
             try {
                 withTimeout(60_000L) {
                     geminiModel.generateContentStream(fullPrompt).collect { chunk ->
                         val chunkText = chunk.text.orEmpty()
                         accumulatedText.append(chunkText)
+                        chunk.candidates.forEach { candidate ->
+                            candidate.groundingMetadata?.groundingChunks?.forEach { gChunk ->
+                                val mapsChunk = gChunk.maps
+                                val chunkTitle = mapsChunk?.title.orEmpty()
+                                val chunkUri = mapsChunk?.uri.orEmpty()
+                                val chunkPlaceId = mapsChunk?.placeId.orEmpty()
+                                if (chunkTitle.isNotBlank() && chunkUri.isNotBlank()) {
+                                    if (groundedPlaces.none { it.uri == chunkUri || it.title == chunkTitle }) {
+                                        groundedPlaces.add(
+                                            MapsGroundedPlace(
+                                                title = chunkTitle,
+                                                uri = chunkUri,
+                                                placeId = chunkPlaceId
+                                            )
+                                        )
+                                    }
+                                }
+                            }
+                        }
                         _aiUiState.value = AiAssistantUiState.Streaming(accumulatedText.toString())
                     }
                 }
                 val finalAnswer = accumulatedText.toString().trim()
+                val finalPlaces = if (groundedPlaces.isNotEmpty()) groundedPlaces.toList() else listOf(defaultMapsPlace)
                 if (finalAnswer.isNotEmpty()) {
                     _aiChatMessages.update {
                         it + AiChatMessage(
                             id = "ai_${System.currentTimeMillis()}",
                             isFromUser = false,
-                            text = finalAnswer
+                            text = finalAnswer,
+                            mapsPlaces = finalPlaces
                         )
                     }
                     _aiUiState.value = AiAssistantUiState.Success(finalAnswer)
@@ -858,7 +936,8 @@ class MarketplaceViewModel(
                             id = "ai_fallback_${System.currentTimeMillis()}",
                             isFromUser = false,
                             text = fallback,
-                            isFallback = true
+                            isFallback = true,
+                            mapsPlaces = finalPlaces
                         )
                     }
                     _aiUiState.value = AiAssistantUiState.Error(
@@ -874,7 +953,8 @@ class MarketplaceViewModel(
                         id = "ai_timeout_${System.currentTimeMillis()}",
                         isFromUser = false,
                         text = fallback,
-                        isFallback = true
+                        isFallback = true,
+                        mapsPlaces = listOf(defaultMapsPlace)
                     )
                 }
                 _aiUiState.value = AiAssistantUiState.Error(
@@ -891,7 +971,8 @@ class MarketplaceViewModel(
                         id = "ai_err_${System.currentTimeMillis()}",
                         isFromUser = false,
                         text = fallback,
-                        isFallback = true
+                        isFallback = true,
+                        mapsPlaces = listOf(defaultMapsPlace)
                     )
                 }
                 _aiUiState.value = AiAssistantUiState.Error(
@@ -900,6 +981,16 @@ class MarketplaceViewModel(
                 )
             }
         }
+    }
+
+    private fun buildDefaultMapsGroundedPlace(query: String, fallbackCity: String): MapsGroundedPlace {
+        val knownCities = listOf("Bengaluru", "Mumbai", "Delhi-NCR", "Delhi", "Hyderabad", "Pune", "Chennai", "Kolkata")
+        val matchedCity = knownCities.firstOrNull { query.contains(it, ignoreCase = true) } ?: fallbackCity
+        val encoded = matchedCity.replace(" ", "+") + "+India"
+        return MapsGroundedPlace(
+            title = "$matchedCity Service Hub • Google Maps",
+            uri = "https://www.google.com/maps/search/?api=1&query=$encoded"
+        )
     }
 
     private fun buildSmartCatalogRecommendation(query: String): String {

@@ -634,6 +634,44 @@ fun MainScreen(
                     }
                 }
 
+                // Offline Connectivity Banner (shown when device is offline to indicate cached Firestore mode)
+                if (!uiState.isNetworkOnline) {
+                    val offlineAccentColor = Color(0xFFFFB300)
+                    Card(
+                        shape = RoundedCornerShape(10.dp),
+                        colors = CardDefaults.cardColors(containerColor = NavySurface.copy(alpha = 0.96f)),
+                        border = BorderStroke(1.dp, offlineAccentColor),
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                            .fillMaxWidth()
+                            .zIndex(9f)
+                            .testTag("offline_connectivity_banner")
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CloudOff,
+                                contentDescription = "Offline Mode",
+                                tint = offlineAccentColor,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Text(
+                                text = "Offline Mode • Using cached data; cloud sync & token refresh will resume automatically when online.",
+                                color = TextWhite,
+                                fontSize = 11.sp,
+                                lineHeight = 14.sp,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                }
+
                 // Account Created Confirmation Banner (shown after one-time permanent registration)
                 if (uiState.registrationConfirmationMessage != null) {
                     Card(

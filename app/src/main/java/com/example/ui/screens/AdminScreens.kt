@@ -10,6 +10,8 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.*
@@ -21,6 +23,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
@@ -1389,11 +1392,21 @@ fun AdminAccountProvisioningDialog(
                     fontSize = 11.sp
                 )
 
+                val submitProvisioning = {
+                    if (founderPass.length < 6 || ceoPass.length < 6 || adminPass.length < 6) {
+                        errorMsg = "All 3 passwords must be at least 6 characters."
+                    } else {
+                        onSubmit(founderPass, ceoPass, adminPass)
+                    }
+                }
+
                 OutlinedTextField(
                     value = founderPass,
                     onValueChange = { founderPass = it; errorMsg = null },
                     label = { Text("Founder Password (${MarketplaceRepository.OFFICIAL_FOUNDER_EMAIL})") },
                     visualTransformation = if (isFVis) VisualTransformation.None else PasswordVisualTransformation(),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                     trailingIcon = {
                         IconButton(onClick = { isFVis = !isFVis }) {
                             Icon(if (isFVis) Icons.Default.VisibilityOff else Icons.Default.Visibility, null, tint = CyanBrand)
@@ -1407,6 +1420,8 @@ fun AdminAccountProvisioningDialog(
                     onValueChange = { ceoPass = it; errorMsg = null },
                     label = { Text("CEO Password (${MarketplaceRepository.OFFICIAL_CEO_EMAIL})") },
                     visualTransformation = if (isCVis) VisualTransformation.None else PasswordVisualTransformation(),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                     trailingIcon = {
                         IconButton(onClick = { isCVis = !isCVis }) {
                             Icon(if (isCVis) Icons.Default.VisibilityOff else Icons.Default.Visibility, null, tint = GreenBrand)
@@ -1420,6 +1435,9 @@ fun AdminAccountProvisioningDialog(
                     onValueChange = { adminPass = it; errorMsg = null },
                     label = { Text("Admin Password (${MarketplaceRepository.OFFICIAL_ADMIN_EMAIL})") },
                     visualTransformation = if (isAVis) VisualTransformation.None else PasswordVisualTransformation(),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { submitProvisioning() }),
                     trailingIcon = {
                         IconButton(onClick = { isAVis = !isAVis }) {
                             Icon(if (isAVis) Icons.Default.VisibilityOff else Icons.Default.Visibility, null, tint = BlueBrand)
@@ -1439,13 +1457,7 @@ fun AdminAccountProvisioningDialog(
                     OutlinedButton(onClick = onDismiss) { Text("Cancel", color = TextLight) }
                     Spacer(modifier = Modifier.width(8.dp))
                     Button(
-                        onClick = {
-                            if (founderPass.length < 6 || ceoPass.length < 6 || adminPass.length < 6) {
-                                errorMsg = "All 3 passwords must be at least 6 characters."
-                            } else {
-                                onSubmit(founderPass, ceoPass, adminPass)
-                            }
-                        },
+                        onClick = { submitProvisioning() },
                         colors = ButtonDefaults.buttonColors(containerColor = CyanBrand),
                         modifier = Modifier.testTag("submit_provision_btn")
                     ) {
@@ -1496,6 +1508,8 @@ fun ResolveComplaintDialog(
                     onValueChange = { notes = it },
                     label = { Text("Resolution Notes") },
                     maxLines = 3,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { onSubmit(selectedStatus, notes) }),
                     modifier = Modifier.fillMaxWidth().testTag("complaint_notes_input")
                 )
 
@@ -1657,10 +1671,29 @@ fun AddCategoryDialog(
             ) {
                 Text("Add Service Category", color = TextWhite, fontSize = 16.sp, fontWeight = FontWeight.Bold)
 
+                val submitCategoryForm = {
+                    if (nameEn.isNotBlank()) {
+                        val subs = subcategoriesStr.split(",").map { it.trim() }.filter { it.isNotBlank() }
+                        onSubmit(
+                            ServiceCategory(
+                                id = "cat_${System.currentTimeMillis()}",
+                                nameEn = nameEn,
+                                nameHi = nameHi.ifBlank { nameEn },
+                                descriptionEn = description,
+                                descriptionHi = description,
+                                iconName = "BusinessCenter",
+                                subcategories = if (subs.isNotEmpty()) subs else listOf("General")
+                            )
+                        )
+                    }
+                }
+
                 OutlinedTextField(
                     value = nameEn,
                     onValueChange = { nameEn = it },
                     label = { Text("Category Name (English)") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                     modifier = Modifier.fillMaxWidth()
                 )
 
@@ -1668,6 +1701,8 @@ fun AddCategoryDialog(
                     value = nameHi,
                     onValueChange = { nameHi = it },
                     label = { Text("श्रेणी का नाम (Hindi)") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                     modifier = Modifier.fillMaxWidth()
                 )
 
@@ -1675,6 +1710,8 @@ fun AddCategoryDialog(
                     value = description,
                     onValueChange = { description = it },
                     label = { Text("Short Description") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                     modifier = Modifier.fillMaxWidth()
                 )
 
@@ -1683,26 +1720,14 @@ fun AddCategoryDialog(
                     onValueChange = { subcategoriesStr = it },
                     label = { Text("Subcategories (comma separated)") },
                     placeholder = { Text("Skill 1, Skill 2, Skill 3") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { submitCategoryForm() }),
                     modifier = Modifier.fillMaxWidth()
                 )
 
                 Button(
-                    onClick = {
-                        if (nameEn.isNotBlank()) {
-                            val subs = subcategoriesStr.split(",").map { it.trim() }.filter { it.isNotBlank() }
-                            onSubmit(
-                                ServiceCategory(
-                                    id = "cat_${System.currentTimeMillis()}",
-                                    nameEn = nameEn,
-                                    nameHi = nameHi.ifBlank { nameEn },
-                                    descriptionEn = description,
-                                    descriptionHi = description,
-                                    iconName = "BusinessCenter",
-                                    subcategories = if (subs.isNotEmpty()) subs else listOf("General")
-                                )
-                            )
-                        }
-                    },
+                    onClick = { submitCategoryForm() },
                     colors = ButtonDefaults.buttonColors(containerColor = CyanBrand),
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -1738,6 +1763,14 @@ fun BroadcastDialog(
                     onValueChange = { text = it },
                     label = { Text("Announcement Text") },
                     maxLines = 3,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                    keyboardActions = KeyboardActions(
+                        onSend = {
+                            if (text.isNotBlank()) {
+                                onSubmit(text)
+                            }
+                        }
+                    ),
                     modifier = Modifier.fillMaxWidth()
                 )
 

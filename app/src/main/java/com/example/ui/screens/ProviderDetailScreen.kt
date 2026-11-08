@@ -1,5 +1,7 @@
 package com.example.ui.screens
 
+import android.content.Intent
+import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -10,6 +12,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
@@ -19,8 +23,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -43,6 +49,7 @@ fun ProviderDetailScreen(
 ) {
     BackHandler(onBack = onBack)
 
+    val context = LocalContext.current
     val providerReviews = reviews.filter { it.providerId == provider.id }
     var showReportDialog by remember { mutableStateOf(false) }
     var reportConfirmation by remember { mutableStateOf<String?>(null) }
@@ -248,6 +255,31 @@ fun ProviderDetailScreen(
                                     color = if (provider.isAvailable) GreenBrand else WarningOrange,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Row(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(GreenBrand.copy(alpha = 0.14f))
+                                    .border(1.dp, GreenBrand.copy(alpha = 0.45f), RoundedCornerShape(8.dp))
+                                    .clickable {
+                                        runCatching {
+                                            val uri = Uri.parse("https://www.google.com/maps/search/?api=1&query=${Uri.encode("${provider.city} ${provider.state} India")}")
+                                            context.startActivity(Intent(Intent.ACTION_VIEW, uri))
+                                        }
+                                    }
+                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                                    .testTag("provider_google_maps_button"),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.Map, contentDescription = null, tint = GreenBrand, modifier = Modifier.size(13.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "View ${provider.city} Service Area on Google Maps ↗",
+                                    color = GreenBrand,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold
                                 )
                             }
                         }
@@ -541,6 +573,15 @@ fun ProviderDetailScreen(
                         value = reportReason,
                         onValueChange = { reportReason = it },
                         label = { Text("Reason / Details") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(
+                            onDone = {
+                                onReportProvider(reportReason)
+                                reportConfirmation = "Report submitted to SkillConnect Trust & Safety (${com.example.model.SkillConnectBranding.OFFICIAL_EMAIL})."
+                                showReportDialog = false
+                            }
+                        ),
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = TextWhite,
                             unfocusedTextColor = TextWhite,
@@ -588,6 +629,19 @@ fun CreateWorkRequestDialog(
     var deadline by remember { mutableStateOf("7 Days") }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
+    val submitWorkRequestForm = {
+        if (title.isBlank() || description.isBlank()) {
+            errorMessage = "Please enter project title and description."
+        } else {
+            val budget = budgetStr.toLongOrNull()
+            if (budget == null || budget <= 0) {
+                errorMessage = "Please enter a valid INR budget."
+            } else {
+                onSubmit(title, description, provider.categoryId, budget, deadline)
+            }
+        }
+    }
+
     Dialog(onDismissRequest = onDismiss) {
         Card(
             shape = RoundedCornerShape(20.dp),
@@ -632,6 +686,8 @@ fun CreateWorkRequestDialog(
                     onValueChange = { title = it },
                     label = { Text("Project Title *") },
                     placeholder = { Text("e.g. Landing Page Design") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = TextWhite,
                         unfocusedTextColor = TextWhite,
@@ -647,6 +703,7 @@ fun CreateWorkRequestDialog(
                     label = { Text("Work Scope & Details *") },
                     placeholder = { Text("Describe requirements, deliverables...") },
                     maxLines = 4,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = TextWhite,
                         unfocusedTextColor = TextWhite,
@@ -664,6 +721,8 @@ fun CreateWorkRequestDialog(
                         value = budgetStr,
                         onValueChange = { budgetStr = it },
                         label = { Text("Budget (₹ INR) *") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = TextWhite,
                             unfocusedTextColor = TextWhite,
@@ -677,6 +736,9 @@ fun CreateWorkRequestDialog(
                         value = deadline,
                         onValueChange = { deadline = it },
                         label = { Text("Deadline") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { submitWorkRequestForm() }),
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = TextWhite,
                             unfocusedTextColor = TextWhite,
@@ -694,18 +756,7 @@ fun CreateWorkRequestDialog(
                 Spacer(modifier = Modifier.height(6.dp))
 
                 Button(
-                    onClick = {
-                        if (title.isBlank() || description.isBlank()) {
-                            errorMessage = "Please enter project title and description."
-                            return@Button
-                        }
-                        val budget = budgetStr.toLongOrNull()
-                        if (budget == null || budget <= 0) {
-                            errorMessage = "Please enter a valid INR budget."
-                            return@Button
-                        }
-                        onSubmit(title, description, provider.categoryId, budget, deadline)
-                    },
+                    onClick = { submitWorkRequestForm() },
                     colors = ButtonDefaults.buttonColors(containerColor = GreenBrand),
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier
@@ -737,6 +788,14 @@ fun SubmitReviewDialog(
     var comment by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
 
+    val submitReviewForm = {
+        if (comment.isBlank()) {
+            error = "Please write a brief review."
+        } else {
+            onSubmit(rating, comment)
+        }
+    }
+
     Dialog(onDismissRequest = onDismiss) {
         Card(
             shape = RoundedCornerShape(20.dp),
@@ -751,7 +810,7 @@ fun SubmitReviewDialog(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(
                     text = "Review & Rate Specialist",
@@ -789,6 +848,8 @@ fun SubmitReviewDialog(
                     label = { Text("Written Review *") },
                     placeholder = { Text("Detail the quality of deliverables, timeliness, and communication...") },
                     maxLines = 4,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                    keyboardActions = KeyboardActions(onSend = { submitReviewForm() }),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = TextWhite,
                         unfocusedTextColor = TextWhite,
@@ -803,13 +864,7 @@ fun SubmitReviewDialog(
                 }
 
                 Button(
-                    onClick = {
-                        if (comment.isBlank()) {
-                            error = "Please write a brief review."
-                            return@Button
-                        }
-                        onSubmit(rating, comment)
-                    },
+                    onClick = { submitReviewForm() },
                     colors = ButtonDefaults.buttonColors(containerColor = GoldStar),
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier

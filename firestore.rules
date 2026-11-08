@@ -144,6 +144,18 @@ service cloud.firestore {
              data.updatedAt is timestamp && data.updatedAt <= request.time;
     }
 
+    // Validation Helper: FcmTokenDoc
+    function isValidFcmToken(data, userId) {
+      return data.userId is string && data.userId == userId && data.userId == request.auth.uid &&
+             data.fcmToken is string && data.fcmToken.size() >= 10 && data.fcmToken.size() <= 4096 &&
+             data.projectId is string && data.projectId == 'gen-lang-client-0778223582' &&
+             data.senderId is string && data.senderId == '800529463187' &&
+             data.packageName is string && data.packageName == 'com.aistudio.skillconnect.market' &&
+             data.platform is string && data.platform == 'ANDROID' &&
+             data.isActive is bool &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
     // Collection: /users/{userId}
     match /users/{userId} {
       allow get: if isSignedIn() && isValidId(userId) && (request.auth.uid == userId || isAdmin());
@@ -180,6 +192,25 @@ service cloud.firestore {
                        );
 
       allow delete: if isSignedIn() && isValidId(userId) && (request.auth.uid == userId || isFounder());
+
+      // Subcollection: /users/{userId}/fcm_tokens/{tokenId}
+      match /fcm_tokens/{tokenId} {
+        allow get, list: if isSignedIn() && isValidId(userId) && (request.auth.uid == userId || isAdmin());
+        allow create, update: if isSignedIn() &&
+                                 isValidId(userId) &&
+                                 isValidId(tokenId) &&
+                                 request.auth.uid == userId &&
+                                 incoming().keys().hasAll([
+                                   'userId', 'fcmToken', 'projectId', 'senderId',
+                                   'packageName', 'platform', 'isActive', 'updatedAt'
+                                 ]) &&
+                                 incoming().keys().hasOnly([
+                                   'userId', 'fcmToken', 'projectId', 'senderId',
+                                   'packageName', 'platform', 'isActive', 'updatedAt'
+                                 ]) &&
+                                 isValidFcmToken(incoming(), userId);
+        allow delete: if isSignedIn() && isValidId(userId) && isValidId(tokenId) && (request.auth.uid == userId || isAdmin());
+      }
     }
 
     // Collection: /work_requests/{requestId}

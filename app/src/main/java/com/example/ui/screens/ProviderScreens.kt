@@ -8,6 +8,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -18,6 +20,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -410,6 +413,22 @@ fun AddServiceDialog(
     var priceStr by remember { mutableStateOf("5000") }
     var daysStr by remember { mutableStateOf("3") }
 
+    val submitServiceForm = {
+        val price = priceStr.toLongOrNull() ?: 3000L
+        val days = daysStr.toIntOrNull() ?: 2
+        if (name.isNotBlank()) {
+            onSubmit(
+                ServiceOffering(
+                    id = "serv_${System.currentTimeMillis()}",
+                    name = name,
+                    description = description,
+                    startingPriceInr = price,
+                    deliveryDays = days
+                )
+            )
+        }
+    }
+
     Dialog(onDismissRequest = onDismiss) {
         Card(
             shape = RoundedCornerShape(18.dp),
@@ -432,6 +451,8 @@ fun AddServiceDialog(
                     value = name,
                     onValueChange = { name = it },
                     label = { Text("Service Title") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = TextWhite,
                         unfocusedTextColor = TextWhite,
@@ -444,6 +465,8 @@ fun AddServiceDialog(
                     value = description,
                     onValueChange = { description = it },
                     label = { Text("Scope / Deliverables") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = TextWhite,
                         unfocusedTextColor = TextWhite,
@@ -457,6 +480,8 @@ fun AddServiceDialog(
                         value = priceStr,
                         onValueChange = { priceStr = it },
                         label = { Text("Price (₹)") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = TextWhite,
                             unfocusedTextColor = TextWhite,
@@ -469,6 +494,9 @@ fun AddServiceDialog(
                         value = daysStr,
                         onValueChange = { daysStr = it },
                         label = { Text("Days") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { submitServiceForm() }),
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = TextWhite,
                             unfocusedTextColor = TextWhite,
@@ -479,21 +507,7 @@ fun AddServiceDialog(
                 }
 
                 Button(
-                    onClick = {
-                        val price = priceStr.toLongOrNull() ?: 3000L
-                        val days = daysStr.toIntOrNull() ?: 2
-                        if (name.isNotBlank()) {
-                            onSubmit(
-                                ServiceOffering(
-                                    id = "serv_${System.currentTimeMillis()}",
-                                    name = name,
-                                    description = description,
-                                    startingPriceInr = price,
-                                    deliveryDays = days
-                                )
-                            )
-                        }
-                    },
+                    onClick = { submitServiceForm() },
                     colors = ButtonDefaults.buttonColors(containerColor = CyanBrand),
                     shape = RoundedCornerShape(10.dp),
                     modifier = Modifier

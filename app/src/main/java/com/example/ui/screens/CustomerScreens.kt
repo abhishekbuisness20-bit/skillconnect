@@ -1,5 +1,7 @@
 package com.example.ui.screens
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -11,6 +13,8 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.*
@@ -25,10 +29,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.*
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -57,6 +65,9 @@ fun CustomerHomeScreen(
     onNavigateRoute: (String) -> Unit = {}
 ) {
     var isInitialCategoryFetch by remember { mutableStateOf(true) }
+    val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
+    val activeCity = uiState.selectedCity ?: uiState.currentUser.city.ifBlank { "Bengaluru" }
     LaunchedEffect(Unit) {
         delay(650L)
         isInitialCategoryFetch = false
@@ -150,10 +161,91 @@ fun CustomerHomeScreen(
                     ),
                     shape = RoundedCornerShape(14.dp),
                     singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(
+                        onSearch = { focusManager.clearFocus() },
+                        onDone = { focusManager.clearFocus() }
+                    ),
                     modifier = Modifier
                         .fillMaxWidth()
+                        .onPreviewKeyEvent { event ->
+                            if (event.type == KeyEventType.KeyDown &&
+                                (event.key == Key.Enter || event.key == Key.NumPadEnter)
+                            ) {
+                                focusManager.clearFocus()
+                                true
+                            } else {
+                                false
+                            }
+                        }
                         .testTag("search_bar_input")
                 )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Google Maps Grounding Local Service Hub Banner
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(NavySurfaceVariant)
+                        .border(1.dp, GreenBrand.copy(alpha = 0.45f), RoundedCornerShape(12.dp))
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                        .testTag("home_maps_grounding_card"),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Map,
+                            contentDescription = null,
+                            tint = GreenBrand,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text(
+                                text = "Google Maps Grounding • $activeCity",
+                                color = GreenBrand,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = "Live local hub insights via gemini-3.8-flash",
+                                color = TextMuted,
+                                fontSize = 10.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        TextButton(
+                            onClick = onOpenAiAssistant,
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                            modifier = Modifier.testTag("home_ask_maps_ai_button")
+                        ) {
+                            Text("Ask AI", color = CyanBrand, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                        TextButton(
+                            onClick = {
+                                runCatching {
+                                    val uri = Uri.parse("https://www.google.com/maps/search/?api=1&query=${Uri.encode("$activeCity Service Hub India")}")
+                                    context.startActivity(Intent(Intent.ACTION_VIEW, uri))
+                                }
+                            },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                            modifier = Modifier.testTag("home_open_google_maps_button")
+                        ) {
+                            Text("Maps ↗", color = GreenBrand, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
 
                 Spacer(modifier = Modifier.height(10.dp))
 
@@ -729,6 +821,7 @@ fun MarketplaceExploreScreen(
     onNavigateRoute: (String) -> Unit = {}
 ) {
     val indianCities = listOf("All", "Bengaluru", "Mumbai", "Delhi-NCR", "Hyderabad", "Pune", "Chennai")
+    val focusManager = LocalFocusManager.current
 
     Column(
         modifier = Modifier
@@ -764,8 +857,23 @@ fun MarketplaceExploreScreen(
                 ),
                 shape = RoundedCornerShape(12.dp),
                 singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(
+                    onSearch = { focusManager.clearFocus() },
+                    onDone = { focusManager.clearFocus() }
+                ),
                 modifier = Modifier
                     .fillMaxWidth()
+                    .onPreviewKeyEvent { event ->
+                        if (event.type == KeyEventType.KeyDown &&
+                            (event.key == Key.Enter || event.key == Key.NumPadEnter)
+                        ) {
+                            focusManager.clearFocus()
+                            true
+                        } else {
+                            false
+                        }
+                    }
                     .testTag("explore_search_input")
             )
 

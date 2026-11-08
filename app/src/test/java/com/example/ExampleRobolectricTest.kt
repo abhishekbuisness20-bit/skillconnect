@@ -953,7 +953,140 @@ class ExampleRobolectricTest {
     assertTrue(founder2.isSuccess)
     assertEquals(com.example.model.AdminRoleType.FOUNDER, founder2.getOrThrow().adminRole)
   }
+
+  @Test
+  fun `google maps grounding places and ai assistant local discovery prompts work properly`() {
+    val repository = MarketplaceRepository()
+    val viewModel = MarketplaceViewModel(repository)
+    org.robolectric.shadows.ShadowLooper.idleMainLooper()
+
+    // 1. Initial AI assistant welcome message includes Google Maps Grounding metadata and places
+    val initialMessages = viewModel.uiState.value.aiChatMessages
+    assertTrue(initialMessages.isNotEmpty())
+    val welcome = initialMessages.first()
+    assertTrue(welcome.text.contains("Google Maps Grounding"))
+    assertTrue(welcome.mapsPlaces.isNotEmpty())
+    assertTrue(welcome.mapsPlaces.any { it.title.contains("Bengaluru") && it.uri.contains("google.com/maps") })
+
+    // 2. Verify Tool.googleMaps() can be instantiated cleanly
+    val mapsTool = com.google.firebase.ai.type.Tool.googleMaps()
+    assertNotNull(mapsTool)
+
+    // 3. Opening AI assistant with a local Google Maps prompt appends user message and grounded fallback
+    viewModel.setCityFilterExplicit("Hyderabad")
+    viewModel.openAiAssistantWithPrompt("Best UI/UX designers in Hyderabad")
+    org.robolectric.shadows.ShadowLooper.idleMainLooper()
+
+    assertTrue(viewModel.uiState.value.isAiAssistantOpen)
+    assertTrue(viewModel.uiState.value.aiChatMessages.any { it.isFromUser && it.text.contains("Hyderabad") })
+  }
+
+  @Test
+  fun `firebase project id, package name, sender id, and token masking work securely`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+
+    // 1. Verify Firebase configuration audit matches SkillConnect project, package, and sender ID
+    val audit = com.example.data.FirebaseTokenManager.verifyFirebaseConfiguration(context)
+    assertEquals("gen-lang-client-0778223582", audit.projectId)
+    assertEquals("com.aistudio.skillconnect.market", audit.packageName)
+    assertEquals("800529463187", audit.senderId)
+    assertEquals("1:800529463187:android:e2715c4819dbe5b6201a66", audit.applicationId)
+    assertTrue(audit.isFullyAligned)
+
+    // 2. Verify notification sender validation accepts only project 800529463187
+    assertTrue(com.example.data.FirebaseTokenManager.validateNotificationSender("800529463187"))
+    assertTrue(com.example.data.FirebaseTokenManager.validateNotificationSender("/topics/announcements"))
+    assertFalse(com.example.data.FirebaseTokenManager.validateNotificationSender("999999999999"))
+    assertFalse(com.example.data.FirebaseTokenManager.validateNotificationSender("800529463187", "wrong-project-id"))
+
+    // 3. Verify token masking never leaks raw secrets or JWT payloads
+    val rawSecret = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+    val masked = com.example.data.FirebaseTokenManager.maskToken(rawSecret)
+    assertFalse("Masked token must never contain raw secret", masked.contains(rawSecret))
+    assertTrue(masked.startsWith("tok[len=36,sha256="))
+    assertEquals("<empty>", com.example.data.FirebaseTokenManager.maskToken(null))
+    assertEquals("<empty>", com.example.data.FirebaseTokenManager.maskToken("   "))
+
+    // 4. Verify log sanitizer redacts JWTs, Bearer tokens, and UUIDs
+    val rawError = "Auth failed for Bearer secret_abc123 and UUID a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+    val sanitized = com.example.data.FirebaseTokenManager.sanitizeLogMessage(rawError)
+    assertFalse(sanitized.contains("secret_abc123"))
+    assertFalse(sanitized.contains("a1b2c3d4-e5f6-7890-abcd-ef1234567890"))
+    assertTrue(sanitized.contains("[REDACTED_TOKEN]"))
+    assertTrue(sanitized.contains("[REDACTED_UUID]"))
+
+    // 5. Verify token error classification pinpoints App Check, FCM, and Auth origins
+    val appCheckDiag = com.example.data.FirebaseTokenManager.classifyTokenError(
+      RuntimeException("Error 403: AppCheck token is invalid")
+    )
+    assertEquals(com.example.data.FirebaseTokenOrigin.FIREBASE_APP_CHECK, appCheckDiag.origin)
+    assertTrue(appCheckDiag.requiresForceRefresh)
+
+    val fcmDiag = com.example.data.FirebaseTokenManager.classifyTokenError(
+      RuntimeException("FIS_AUTH_ERROR: INVALID_PARAMETERS for registration token")
+    )
+    assertEquals(com.example.data.FirebaseTokenOrigin.FIREBASE_CLOUD_MESSAGING, fcmDiag.origin)
+    assertTrue(fcmDiag.requiresTokenReset)
+  }
+
+  @Test
+  fun `app check debug secret validator accepts valid UUIDs and rejects malformed strings`() {
+    assertTrue(
+      com.example.data.FirebaseTokenManager.isValidDebugSecretFormat("550e8400-e29b-41d4-a716-446655440000")
+    )
+    assertFalse(com.example.data.FirebaseTokenManager.isValidDebugSecretFormat(null))
+    assertFalse(com.example.data.FirebaseTokenManager.isValidDebugSecretFormat(""))
+    assertFalse(com.example.data.FirebaseTokenManager.isValidDebugSecretFormat("null"))
+    assertFalse(com.example.data.FirebaseTokenManager.isValidDebugSecretFormat("undefined"))
+    assertFalse(com.example.data.FirebaseTokenManager.isValidDebugSecretFormat("not-a-valid-uuid"))
+  }
+
+  @Test
+  fun `network connectivity listener prevents unnecessary token invalidation when offline and triggers reconnect sync`() {
+    val repository = MarketplaceRepository()
+    val viewModel = MarketplaceViewModel(repository)
+    org.robolectric.shadows.ShadowLooper.idleMainLooper()
+
+    var reconnectedCount = 0
+    val reconnectListener: () -> Unit = { reconnectedCount++ }
+    com.example.data.NetworkConnectivityMonitor.addOnReconnectListener(reconnectListener)
+
+    try {
+      // 1. Default state is online
+      com.example.data.NetworkConnectivityMonitor.setSimulatedOnlineStateForTesting(true)
+      org.robolectric.shadows.ShadowLooper.idleMainLooper()
+      assertTrue(viewModel.uiState.value.isNetworkOnline)
+
+      // 2. Simulate device going offline
+      com.example.data.NetworkConnectivityMonitor.setSimulatedOnlineStateForTesting(false)
+      org.robolectric.shadows.ShadowLooper.idleMainLooper()
+      assertFalse(com.example.data.NetworkConnectivityMonitor.isCurrentlyConnected())
+      assertFalse(viewModel.uiState.value.isNetworkOnline)
+
+      // 3. While offline, errors must be classified as NETWORK_OFFLINE without invalidating or resetting tokens
+      val offlineDiag = com.example.data.FirebaseTokenManager.classifyTokenError(
+        RuntimeException("Failed to get document because the client is offline")
+      )
+      assertEquals(com.example.data.FirebaseTokenOrigin.NETWORK_OFFLINE, offlineDiag.origin)
+      assertEquals("CLIENT_OFFLINE", offlineDiag.errorCode)
+      assertFalse("Offline error must not force token refresh", offlineDiag.requiresForceRefresh)
+      assertFalse("Offline error must not reset FCM token", offlineDiag.requiresTokenReset)
+      assertTrue(offlineDiag.isTransientNetworkError)
+
+      // 4. Simulate device reconnecting (Offline -> Online)
+      com.example.data.NetworkConnectivityMonitor.setSimulatedOnlineStateForTesting(true)
+      org.robolectric.shadows.ShadowLooper.idleMainLooper()
+      assertTrue(com.example.data.NetworkConnectivityMonitor.isCurrentlyConnected())
+      assertTrue(viewModel.uiState.value.isNetworkOnline)
+      assertEquals(1, reconnectedCount)
+    } finally {
+      com.example.data.NetworkConnectivityMonitor.removeOnReconnectListener(reconnectListener)
+      com.example.data.NetworkConnectivityMonitor.setSimulatedOnlineStateForTesting(null)
+    }
+  }
 }
+
+
 
 
 
